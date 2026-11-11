@@ -1,0 +1,11 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Cookies consentmanager em shadow DOM (fixture)</title><script>window.clicked=[];const hit=k=>{window.clicked.push(k);window.accepted=k};</script>
+</head><body>
+<main><h1>Portal</h1></main>
+<div id="cmpwrapper" class="cmpwrapper"></div>
+<script>document.getElementById('cmpwrapper').attachShadow({mode:'open'}).innerHTML =
+'<div id="cmpbox" class="cmpbox cmpstyleroot cmpbox3" style="position:fixed;bottom:0;left:0;right:0;background:#fff;padding:12px"><div class="cmpboxinner">' +
+'<p>Usamos cookies e parceiros.</p><div class="cmpboxbtns">' +
+'<span id="cmpwelcomebtnno" class="cmpboxbtnspan"><a class="cmpboxbtn cmpboxbtnno cmptxt_btn_no" role="button" href="#" onclick="hit(\'rejeitar\');return false">Rejeitar tudo</a></span>' +
+'<span id="cmpwelcomebtnyes" class="cmpboxbtnspan"><a class="cmpboxbtn cmpboxbtnyes cmptxt_btn_yes" role="button" href="#" onclick="hit(\'cmp\');return false">Aceitar tudo</a></span>' +
+'</div></div></div>';</script>
+</body></html>
