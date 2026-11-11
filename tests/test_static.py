@@ -16,9 +16,12 @@ def meta_of(name):
     return metadata((SRC / name).read_text(encoding="utf-8"))
 
 
-def test_quatro_scripts():
-    assert SCRIPTS == ["cookies-aceitar.user.js", "dados-pessoais.user.js",
-                       "georritmo-links.user.js", "shop-filter.user.js"]
+VERSOES = {"cookies-aceitar.user.js": "1.1.0", "dados-pessoais.user.js": "1.0.0", "georritmo-links.user.js": "1.0.0",
+           "shop-filter.user.js": "1.0.0", "unbloat.user.js": "1.0.0"}
+
+
+def test_cinco_scripts():
+    assert SCRIPTS == sorted(VERSOES)
 
 
 @pytest.mark.parametrize("name", SCRIPTS)
@@ -36,7 +39,7 @@ def test_cabecalho(name):
     for k, v in m:
         d.setdefault(k, []).append(v)
     assert d["namespace"] == ["raschagas/userscripts"]
-    assert d["version"] == ["1.0.0"]
+    assert d["version"] == [VERSOES[name]]
     assert d["downloadURL"] == [RAW.format(name)]
     assert d["updateURL"] == [RAW.format(name)]
     assert d["name"] and d["description"]
@@ -153,3 +156,43 @@ def test_cookies_nunca_em_login_gov_e_sistemas_de_trabalho(url):
 def test_cookies_excludes():
     ex = [v for k, v in meta_of("cookies-aceitar.user.js") if k == "exclude"]
     assert ex == ["*://sso.acesso.gov.br/*", "*://*.camara.leg.br/*", "*://camara.leg.br/*", "*://*.camara.gov.br/*"]
+
+
+UB = "unbloat.user.js"
+
+
+@pytest.mark.parametrize("url,expected", [
+    ("https://www.youtube.com/", True),
+    ("https://www.youtube.com/watch?v=x", True),
+    ("https://m.youtube.com/results?search_query=x", True),
+    ("https://youtube.com/shorts/x", True),
+    ("https://pt.aliexpress.com/w/wholesale-x.html", True),
+    ("https://m.aliexpress.com/w/wholesale-x.html", True),
+    ("https://www.amazon.com.br/s?k=x", True),
+    ("https://lista.mercadolivre.com.br/x", True),
+    ("https://www.mercadolivre.com.br/", True),
+    ("https://www.amazon.com/s?k=x", False),
+    ("https://www.youtube.com.evil.com/", False),
+    ("https://evil.com/?u=https://www.youtube.com/", False),
+    ("https://www.google.com/search?q=youtube", False),
+    ("https://www.camara.leg.br/", False),
+    ("https://camara.leg.br/", False),
+    ("https://x.camara.gov.br/", False),
+])
+def test_unbloat_escopo(url, expected):
+    assert runs_on(meta_of(UB), url) is expected, url
+
+
+def test_unbloat_excludes_camara_e_sem_frames():
+    m = meta_of(UB)
+    assert [v for k, v in m if k == "exclude"] == ["*://camara.leg.br/*", "*://*.camara.leg.br/*",
+                                                   "*://camara.gov.br/*", "*://*.camara.gov.br/*"]
+    assert any(k == "noframes" for k, _ in m)
+
+
+def test_unbloat_so_oculta():
+    """Só CSS de ocultar: nada de click(), submit, eventos sintéticos nem escrita em campo."""
+    code = (SRC / UB).read_text(encoding="utf-8")
+    assert not re.search(r"\.(click|submit|requestSubmit|dispatchEvent)\s*\(", code)
+    assert not re.search(r"\.value\s*=[^=]", code)
+    assert "display:none!important" in code
