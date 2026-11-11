@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Cookies — aceitar e fechar o aviso
 // @namespace    raschagas/userscripts
-// @version      1.0.0
-// @description  Aceita banners de cookies (OneTrust, Cookiebot, Didomi, Quantcast, Usercentrics, TrustArc, CookieYes, Complianz, Adopt e avisos genéricos que falem de cookies) e some com eles. Para de procurar após 15 s. Em iframes, só as plataformas conhecidas.
+// @version      1.1.0
+// @description  Aceita banners de cookies (OneTrust, Cookiebot, Didomi, Quantcast, Usercentrics, TrustArc, CookieYes, Complianz, Adopt, Google Funding Choices, Sourcepoint, consentmanager, Cookie Notice, Klaro, Borlabs, CookieHub, Axeptio, Moove e avisos genéricos que falem de cookies) e some com eles. Para de procurar após 15 s. Em iframes, só as plataformas conhecidas.
 // @match        *://*/*
 // @exclude      *://sso.acesso.gov.br/*
 // @exclude      *://*.camara.leg.br/*
@@ -41,6 +41,20 @@
     '.cc-window .cc-btn.cc-allow', '.cc-window .cc-btn.cc-dismiss',   // Osano / cookieconsent
     'button[data-testid="uc-accept-all-button"]',                     // Usercentrics (fora do shadow)
     '[data-cookiefirst-action="accept"]', '.iubenda-cs-accept-btn', '#termly-code-snippet-support .t-acceptAllButton',
+    '.fc-consent-root .fc-cta-consent',                               // Google Funding Choices (Privacidade e mensagens)
+    'button.message-button.sp_choice_type_11',                        // Sourcepoint (iframe; 11 = aceitar tudo)
+    '#cmpbox .cmpboxbtnyes',                                          // consentmanager (fora do shadow)
+    '#cookie-notice #cn-accept-cookie',                               // Cookie Notice (WordPress)
+    '.klaro .cookie-notice .cm-btn-success', '.klaro .cm-btn-accept-all', // Klaro
+    '#BorlabsCookieBox .brlbs-btn-accept-all',                        // Borlabs Cookie 3
+    '#ch2-dialog .ch2-allow-all-btn',                                 // CookieHub
+    '#moove_gdpr_cookie_info_bar .moove-gdpr-infobar-allow-all',      // Moove GDPR Cookie Compliance (WordPress)
+  ];
+  // Plataformas que desenham o aviso em shadow DOM aberto: [hospedeiro, botão "aceitar tudo"].
+  const SHADOW = [
+    ['#usercentrics-root, aside[id*="usercentrics"], [id*="cmp"][id*="root"]', 'button[data-testid="uc-accept-all-button"]'], // Usercentrics
+    ['#cmpwrapper', '#cmpbox .cmpboxbtnyes'],                                          // consentmanager
+    ['#axeptio_overlay > div', '#axeptio_btn_acceptAll'],                             // Axeptio
   ];
   // 2) Ids genéricos de "aceitar cookies": só no frame do topo e dentro de contêiner que fale de cookie.
   const GENERIC_IDS = ['#cookie-consent-accept', '#accept-cookies', '#acceptCookies', '.js-accept-cookies'];
@@ -52,7 +66,7 @@
   const STRICT = /^(aceitar todos os cookies|aceitar cookies|aceito os cookies|permitir todos os cookies|accept all cookies|accept cookies|allow all cookies)$/i;
   const ALL = /^(aceitar tudo|aceitar todos|permitir todos|accept all|allow all)$/i;
   const LOOSE = /^(aceitar|aceito|concordo|entendi|ok|ok, entendi|prosseguir|accept|agree|i agree|got it)$/i;
-  const CMPNAME = /onetrust|cybotcookiebot|didomi|qc-cmp|truste|trustarc|cky-|cmplz|adopt|usercentrics|iubenda|termly|cookiefirst|cc-window|br-cookiebar/i;
+  const CMPNAME = /onetrust|cybotcookiebot|didomi|qc-cmp|truste|trustarc|cky-|cmplz|adopt|usercentrics|iubenda|termly|cookiefirst|cc-window|br-cookiebar|fc-consent|fc-dialog|sp_message|cmpbox|klaro|brlbs|borlabs|ch2-|axeptio|moove_gdpr/i;
   const COOKIE = /cookie/i;
   const BOXNAME = /cookie|consent/i;
 
@@ -66,16 +80,19 @@
   const SENSITIVE = 'input[type="password"], input[autocomplete^="cc-"], input[name*="cpf" i], input[id*="cpf" i], input[name*="card" i], input[name*="cartao" i], input[name*="cartão" i], ' +
     'input:not([type]), input[type="text"], input[type="email"], input[type="tel"], input[type="number"], input[type="search"]';
 
-  function shadowFind(sel) { // Usercentrics e afins renderizam em shadow DOM aberto
-    for (const h of document.querySelectorAll('#usercentrics-root, aside[id*="usercentrics"], [id*="cmp"][id*="root"]')) {
-      const b = h.shadowRoot && h.shadowRoot.querySelector(sel); if (b) return b;
+  function shadowFind(hosts, sel) {
+    for (const h of document.querySelectorAll(hosts)) {
+      const b = h.shadowRoot && h.shadowRoot.querySelector(sel);
+      if (b && clickable(b) && !forbidden(b, true)) return b;
     }
   }
   // Nunca: botão de envio, nada em formulário ou diálogo modal que não seja de cookies.
-  function forbidden(b) {
+  // Seletor de plataforma conhecida (cmp) dispensa a checagem do diálogo: o próprio seletor já é da plataforma.
+  function forbidden(b, cmp) {
     if (b.matches('input[type="submit"]')) return true;
     if (b.matches('button[type="submit"]') && !cookieNamed(b)) return true;
     const f = b.closest('form'); if (f && !COOKIE.test(idClass(f))) return true;
+    if (cmp) return false;
     const d = b.closest('[role="dialog"][aria-modal="true"], dialog[open]');
     if (d && !(COOKIE.test(idClass(d)) || COOKIE.test((d.innerText || '').slice(0, 2000)))) return true;
     return false;
@@ -103,7 +120,7 @@
   function firstVisible(sel, needBanner) {
     let list; try { list = document.querySelectorAll(sel); } catch (_) { return null; }
     for (const b of list) {
-      if (!clickable(b) || forbidden(b)) continue;
+      if (!clickable(b) || forbidden(b, !needBanner)) continue;
       if (needBanner) { const box = banner(b); if (!box || !safeIn(box)) continue; }
       return b;
     }
@@ -112,7 +129,7 @@
   function attempt() {
     if (done) return true;
     for (const s of CMP) { const b = firstVisible(s, false); if (b) return finish(b, 'cmp:' + s); }
-    const ub = shadowFind('button[data-testid="uc-accept-all-button"]'); if (ub) return finish(ub, 'usercentrics');
+    for (const [h, s] of SHADOW) { const b = shadowFind(h, s); if (b) return finish(b, 'shadow:' + s); }
     if (!top) return false; // em iframe, só plataformas conhecidas
     for (const s of GENERIC_IDS) { const b = firstVisible(s, true); if (b) return finish(b, 'id:' + s); }
     for (const b of document.querySelectorAll('button, a[role="button"], [role="button"], input[type="button"], a')) {

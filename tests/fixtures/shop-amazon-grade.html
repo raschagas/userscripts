@@ -1,0 +1,23 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Amazon.com.br grade com selos (fixture)</title>
+<!-- Estrutura da busca real em PC (2026-11-11): selo acima da moldura quadrada (.s-image-square-aspect, 242 px)
+     e foto centrada dentro dela com largura/altura variáveis. A Amazon iguala a altura do topo na fileira. -->
+<style>*{box-sizing:border-box}body{margin:0;font:13px/1.35 Arial,sans-serif;background:#fff;color:#0f1111}
+.s-main-slot{display:grid;grid-template-columns:repeat(4,268px);gap:0;padding:14px}
+.sg-col-inner{padding:0 4px}.puis-card-container{border:1px solid #ddd;border-radius:8px;overflow:hidden}
+.s-product-image-container{padding:0 8px}.s-badge-row{height:24px;font-size:12px;font-weight:700}.s-badge-row b{background:#232f3e;color:#fff;padding:2px 6px}
+.s-image-square-aspect{width:242px;height:242px;display:flex;align-items:center;justify-content:center;background:#f7f7f7}
+.s-image{display:block;background:linear-gradient(135deg,#e5e7eb,#9ca3af)}.b{padding:8px}</style></head><body>
+<div class="s-main-slot" id="g"></div>
+<script>
+// [id, selo (null = fileira sem selo; '' = espaço reservado), largura e altura da foto, nota, classificações]
+const D=[['r1a',null,242,217,4.7,812],['r1b',null,183,242,4.0,900],['r1c',null,242,222,4.8,40],['r1d',null,242,239,4.6,500],
+['r2a','Escolha da Amazon',236,242,4.8,3000],['r2b','',205,242,4.5,120],['r2c','Mais vendido',242,190,3.9,60],['r2d','',164,242,4.9,2200]];
+document.getElementById('g').innerHTML=D.map(([id,b,w,h,r,n])=>`<div data-component-type="s-search-result" class="s-result-item" data-id="${id}">
+<div class="sg-col-inner"><div class="s-widget-container"><div class="puis-card-container s-card-container"><div class="a-section">
+<div class="s-product-image-container aok-relative">${b==null?'':`<div class="s-badge-row">${b?`<b>${b}</b>`:''}</div>`}
+<span class="rush-component"><a class="a-link-normal s-no-outline" href="/dp/B0${id.toUpperCase()}XXXXX"><div class="a-section aok-relative s-image-square-aspect">
+<img class="s-image" alt="" style="width:${w}px;height:${h}px" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></div></a></span></div>
+<div class="b"><h2>Suporte ${id}</h2><span class="a-icon-alt">${String(r).replace('.',',')} de 5 estrelas</span>
+<span aria-label="${n.toLocaleString('pt-BR')} classificações">(${n})</span><div>${id==='r2a'?'Comprado mais de 1 mil vezes no mês passado':''}</div></div>
+</div></div></div></div></div>`).join('');
+</script></body></html>

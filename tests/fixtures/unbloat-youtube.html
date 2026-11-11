@@ -1,0 +1,42 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>YouTube (fixture do unbloat)</title>
+<style>body{margin:0;font:14px system-ui}*{box-sizing:border-box}
+ytd-masthead,ytd-guide-entry-renderer,ytd-mini-guide-entry-renderer,ytd-browse,ytd-rich-grid-renderer,ytd-rich-item-renderer,ytd-rich-section-renderer,ytd-rich-shelf-renderer,
+grid-shelf-view-model,ytm-shorts-lockup-view-model,ytd-video-renderer,yt-lockup-view-model,ytd-watch-flexy,ytd-ad-slot-renderer,ytd-merch-shelf-renderer,ytm-pivot-bar-item-renderer,
+ytm-video-with-context-renderer,ytd-reel-shelf-renderer,ytd-engagement-panel-section-list-renderer,ytd-watch-metadata{display:block;min-height:20px;border:1px solid #ddd;margin:2px}
+.html5-video-player{position:relative;height:120px;background:#000;color:#fff}.ytp-ce-element{position:absolute;right:8px;bottom:8px;background:#333}</style>
+<script>window.clicked=[];const hit=k=>window.clicked.push(k);</script></head><body>
+<ytd-masthead id="masthead"><form id="busca" onsubmit="return false"><input name="search_query" value="receita de bolo"><button type="button" onclick="hit('buscar')">Buscar</button></form></ytd-masthead>
+<nav id="guia">
+<ytd-guide-entry-renderer id="g-inicio"><a title="Início" href="/">Início</a></ytd-guide-entry-renderer>
+<ytd-guide-entry-renderer id="g-shorts"><a title="Shorts">Shorts</a></ytd-guide-entry-renderer>
+<ytd-guide-entry-renderer id="g-inscricoes"><a title="Inscrições" href="/feed/subscriptions">Inscrições</a></ytd-guide-entry-renderer>
+<ytd-mini-guide-entry-renderer id="mg-shorts"><a title="Shorts">Shorts</a></ytd-mini-guide-entry-renderer>
+<ytd-mini-guide-entry-renderer id="mg-inicio"><a title="Início" href="/">Início</a></ytd-mini-guide-entry-renderer>
+<ytm-pivot-bar-item-renderer id="pv-shorts"><div role="tab" class="pivot-bar-item-tab pivot-shorts">Shorts</div></ytm-pivot-bar-item-renderer>
+<ytm-pivot-bar-item-renderer id="pv-inicio"><div role="tab" class="pivot-bar-item-tab pivot-w2w">Início</div></ytm-pivot-bar-item-renderer>
+</nav>
+<div id="masthead-ad">Anúncio de topo</div>
+<ytd-browse page-subtype="home"><ytd-rich-grid-renderer id="feed"><div id="contents">
+<ytd-rich-item-renderer id="ri-video"><a id="thumbnail" href="/watch?v=aaaaaaaaaaa">Vídeo comum</a></ytd-rich-item-renderer>
+<ytd-rich-section-renderer id="rs-shorts"><ytd-rich-shelf-renderer is-shorts><ytd-rich-item-renderer><ytm-shorts-lockup-view-model><a href="/shorts/bbbbbbbbbbb">Short 1</a></ytm-shorts-lockup-view-model></ytd-rich-item-renderer></ytd-rich-shelf-renderer></ytd-rich-section-renderer>
+<ytd-rich-item-renderer id="ri-short"><a href="/shorts/ccccccccccc">Short solto</a></ytd-rich-item-renderer>
+<ytd-rich-item-renderer id="ri-ad"><div id="content"><ytd-ad-slot-renderer>Anúncio no feed</ytd-ad-slot-renderer></div></ytd-rich-item-renderer>
+</div></ytd-rich-grid-renderer></ytd-browse>
+<section id="busca-resultados">
+<grid-shelf-view-model id="gs-shorts"><ytm-shorts-lockup-view-model><a href="/shorts/ddddddddddd">Short da busca</a></ytm-shorts-lockup-view-model></grid-shelf-view-model>
+<ytd-reel-shelf-renderer id="reel-shelf"><a href="/shorts/eeeeeeeeeee">Prateleira antiga</a></ytd-reel-shelf-renderer>
+<ytd-video-renderer id="vr-video"><a id="thumbnail" href="/watch?v=fffffffffff">Resultado comum</a></ytd-video-renderer>
+<ytd-video-renderer id="vr-short"><a id="thumbnail" href="/shorts/ggggggggggg">Resultado Short</a></ytd-video-renderer>
+<ytm-video-with-context-renderer id="m-video"><a href="/watch?v=hhhhhhhhhhh">Resultado celular</a></ytm-video-with-context-renderer>
+<ytm-video-with-context-renderer id="m-short"><a href="/shorts/iiiiiiiiiii">Short celular</a></ytm-video-with-context-renderer>
+</section>
+<ytd-watch-flexy id="watch"><div id="primary"><div id="movie_player" class="html5-video-player">Player
+<div class="ytp-endscreen-content" id="endscreen">Vídeos sugeridos no fim</div><div class="ytp-ce-element" id="endcard">Cartão final</div></div>
+<ytd-watch-metadata id="meta">Título do vídeo <button onclick="hit('gostei')">Gostei</button></ytd-watch-metadata>
+<ytd-merch-shelf-renderer id="merch">Produtos do canal</ytd-merch-shelf-renderer>
+<div id="comments">Comentários</div></div>
+<div id="secondary"><div id="player-ads">Anúncio lateral</div><ytd-engagement-panel-section-list-renderer id="ep-ads" target-id="engagement-panel-ads">Painel de anúncio</ytd-engagement-panel-section-list-renderer>
+<div id="related"><yt-lockup-view-model id="rel-video"><a href="/watch?v=jjjjjjjjjjj">Recomendado</a></yt-lockup-view-model>
+<yt-lockup-view-model id="rel-short"><a href="/shorts/kkkkkkkkkkk">Recomendado Short</a></yt-lockup-view-model></div></div>
+</ytd-watch-flexy>
+</body></html>

@@ -1,0 +1,10 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Cookies Axeptio em shadow DOM (fixture)</title><script>window.clicked=[];const hit=k=>{window.clicked.push(k);window.accepted=k};</script>
+</head><body>
+<main><h1>Site</h1></main>
+<div id="axeptio_overlay" class="axeptio_mount"><div class="needsclick"></div></div>
+<script>document.querySelector('#axeptio_overlay > .needsclick').attachShadow({mode:'open'}).innerHTML =
+'<div style="position:fixed;bottom:12px;left:12px;width:360px;background:#fff;border:1px solid #ccc;padding:12px"><p>Este site usa cookies.</p>' +
+'<button id="axeptio_btn_dismiss" onclick="hit(\'recusar\')">Não, obrigado</button>' +
+'<button id="axeptio_btn_configure" onclick="hit(\'escolher\')">Escolher</button>' +
+'<button id="axeptio_btn_acceptAll" aria-label="Ok para mim - Aceitar todos os cookies" onclick="hit(\'axeptio\')">Ok para mim</button></div>';</script>
+</body></html>
