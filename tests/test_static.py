@@ -10,6 +10,7 @@ from matchpattern import _match_one, metadata, runs_on
 
 SCRIPTS = sorted(p.name for p in SRC.glob("*.user.js"))
 RAW = "https://raw.githubusercontent.com/raschagas/userscripts/main/src/{}"
+VERSIONS = {"shop-filter.user.js": "1.1.0"}  # demais scripts: 1.0.0
 
 
 def meta_of(name):
@@ -36,7 +37,7 @@ def test_cabecalho(name):
     for k, v in m:
         d.setdefault(k, []).append(v)
     assert d["namespace"] == ["raschagas/userscripts"]
-    assert d["version"] == ["1.0.0"]
+    assert d["version"] == [VERSIONS.get(name, "1.0.0")]
     assert d["downloadURL"] == [RAW.format(name)]
     assert d["updateURL"] == [RAW.format(name)]
     assert d["name"] and d["description"]

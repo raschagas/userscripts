@@ -38,11 +38,13 @@ entram por regra personalizada no gerenciador, em cada aparelho, sem editar o sc
 
 ## Filtro de lojas (`shop-filter.user.js`)
 
-Cada anúncio ganha um **círculo** a 12 px do topo e da esquerda da foto:
-verde = passa, vermelho = reprovado, cinza = sem dados. Ao lado, opcionalmente, nota e quantidade
-(`4,8★ · 476`, ou `9,2/10 · 96` em lojas com outra escala). Reprovados ficam esmaecidos (o véu some
-ao passar o mouse) ou ocultos. Patrocinados só ficam se forem aprovados e ganham o selo azul
-"patrocinado ✓".
+Cada anúncio ganha um **círculo** a 12 px do topo e da esquerda da foto (na Amazon em PC, da moldura
+quadrada da foto, para os círculos ficarem alinhados na fileira mesmo com selos como "Escolha da
+Amazon" ou fotos estreitas): verde = passa, vermelho = reprovado, cinza = sem dados. Ao lado,
+opcionalmente, nota e quantidade (`4,8★ · 476`, ou `9,2/10 · 96` em lojas com outra escala).
+Reprovados ficam esmaecidos (o véu some ao passar o mouse) ou ocultos; oculto sai da grade inteiro
+(o item do contêiner de resultados), e os demais anúncios sobem sem deixar buraco. Patrocinados só
+ficam se forem aprovados e ganham o selo azul "patrocinado ✓".
 
 A **pílula** no canto inferior direito mostra a contagem ("4 reprovados · 2 patrocinados ocultos") e
 abre o **painel** (PC) ou a **gaveta** (celular, tela com menos de 600 px).
@@ -65,10 +67,11 @@ Menu: **Abrir ajustes do filtro** · **Desligar/ligar neste site**.
 
 | Site | Situação |
 |---|---|
-| AliExpress (PC e celular) | testado em página real em 2026-11-10 |
-| Amazon.com.br (PC e celular) | testado em página real em 2026-11-10 |
+| AliExpress (PC e celular) | testado em página real em 2026-11-10; ocultar sem buracos na grade conferido em 2026-11-11 |
+| Amazon.com.br (PC e celular) | testado em página real em 2026-11-10; círculo alinhado pela moldura da foto conferido em 2026-11-11 |
 | KaBuM | testado em página real em 2026-11-10 (sem contagem: filtra só pela nota) |
-| Mercado Livre, Shopee, Magalu, Americanas, Casas Bahia, Temu, Shein | **experimental**: não abrem no navegador automatizado (login/403); seletores semânticos e por texto, não verificados. Só esmaece (nunca oculta, mesmo com "Ocultar reprovados" ligado; o painel avisa). Com menos de dois anúncios reconhecidos, ou "cartões" que reúnem vários produtos, o script não marca nada. |
+| Shopee | verificado com o dono logado (a busca exige login; não abre no navegador automatizado). Oculta reprovados (o `li` da grade) e põe o círculo no canto da foto |
+| Mercado Livre, Magalu, Americanas, Casas Bahia, Temu, Shein | **experimental**: não abrem no navegador automatizado (login/403); seletores semânticos e por texto, não verificados. Só esmaece (nunca oculta, mesmo com "Ocultar reprovados" ligado; o painel avisa). Com menos de dois anúncios reconhecidos, ou "cartões" que reúnem vários produtos, o script não marca nada. |
 
 ## Dados pessoais (`dados-pessoais.user.js`)
 

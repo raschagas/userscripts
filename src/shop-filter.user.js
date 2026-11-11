@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Filtro de lojas — nota e vendas em cada anúncio
 // @namespace    raschagas/userscripts
-// @version      1.0.0
+// @version      1.1.0
 // @description  Marca cada anúncio com um círculo verde, vermelho ou cinza pela nota e pela quantidade de avaliações ou vendas, esmaece ou oculta os reprovados, some com patrocinados reprovados e corrige links de combos do AliExpress. Ajustes por site.
 // @match        https://*.aliexpress.com/*
 // @match        https://www.amazon.com.br/*
@@ -103,7 +103,19 @@
   }
   const generic = el => { const L = linesOf(el); return Object.assign({ rating: genericRating(el, L) }, genericCount(el, L)); };
   const sponsoredText = el => SPONSORED.test(el.innerText || '');
-  const imgAnchor = c => { const i = c.querySelector('img'); return i ? (i.parentElement && c.contains(i.parentElement) && i.parentElement !== c ? i.parentElement : i) : c; };
+  // Pai da primeira imagem; sem caixa (display:contents dá retângulo zerado), a própria imagem.
+  const imgAnchor = c => {
+    const i = c.querySelector('img'); if (!i) return c;
+    const p = i.parentElement;
+    if (p && p !== c && c.contains(p)) { const r = p.getBoundingClientRect(); if (r.width && r.height) return p; }
+    return i;
+  };
+  // A maior imagem já desenhada do cartão (a foto do produto); selos, bandeiras e ícones ficam de fora.
+  function bigImg(c, sel) {
+    let best = null, area = 400;
+    for (const i of qsa(sel || 'img', c)) { const r = i.getBoundingClientRect(); if (r.width * r.height > area) { area = r.width * r.height; best = i; } }
+    return best;
+  }
   // Um cartão por elemento externo: evita contar o mesmo produto duas vezes.
   function outermost(list) { const s = new Set(list); return list.filter(e => { for (let p = e.parentElement; p; p = p.parentElement) if (s.has(p)) return false; return true; }); }
 
@@ -141,11 +153,12 @@
         const g = m && n != null ? null : generic(c);
         return { rating: m ? toRating(m[1]) : g.rating, count: n != null ? n : g.count, countKind: 'reviews' };
       },
-      // A foto fica centrada num contêiner mais alto (celular): ancora na própria imagem quando já carregou.
+      // Grade (PC): a moldura quadrada da foto fica no mesmo lugar em todos os cartões da fileira, e a foto
+      // dentro dela muda com a proporção; selos ("Escolha da Amazon") ficam acima da moldura. Lista (celular):
+      // a foto fica centrada num contêiner mais alto e o círculo vai na própria imagem.
       anchor: c => {
-        let best = null, area = 400; // a maior imagem carregada; ícones (svg 24 px) ficam de fora
-        for (const i of qsa('img.s-image', c)) { const r = i.getBoundingClientRect(); if (r.width * r.height > area) { area = r.width * r.height; best = i; } }
-        return best || c.querySelector('.s-product-image-container') || imgAnchor(c);
+        for (const f of qsa('.s-image-square-aspect', c)) { const r = f.getBoundingClientRect(); if (r.width * r.height > 400) return f; }
+        return bigImg(c, 'img.s-image') || c.querySelector('.s-product-image-container') || imgAnchor(c);
       },
       wrapper: c => c,
       sponsored: c => !!c.querySelector('.puis-sponsored-label-text, [data-component-type="sp-sponsored-result"], .s-sponsored-label-text') || sponsoredText(c) },
@@ -153,6 +166,15 @@
       cards: () => qsa('a[href*="/produto/"].group'),
       extract: c => { const m = /Avalia[cç][aã]o\s*([\d.,]+)\s*de\s*5/i.exec(c.innerText || ''); return { rating: m ? toRating(m[1]) : generic(c).rating, count: null, countKind: null }; },
       anchor: imgAnchor, wrapper: c => c, sponsored: c => sponsoredText(c) },
+    // Shopee: a busca exige login (o navegador automatizado não abre); conferida com o dono logado no Edge
+    // e com um esqueleto do DOM real. Os últimos li chegam vazios (carregam ao rolar): não são cartões ainda.
+    { id: 'shopee', name: 'Shopee', host: /(^|\.)shopee\.com\.br$/, scale: 5, product: /-i\.(\d+\.\d+)/,
+      cards: () => outermost(qsa('li.shopee-search-item-result__item, [data-sqe="item"]')).filter(c => c.querySelector('a[href]')),
+      extract: c => { const L = linesOf(c); const r = bareRating(c, L); const g = generic(c); return { rating: r ? toRating(r[1]) : g.rating, count: g.count, countKind: g.countKind }; },
+      // A foto é a maior imagem (absoluta, 100% do quadro). O pai dela é um <picture> com display:contents,
+      // sem caixa (retângulo zerado): ancorar nele punha o círculo fora da foto quando a página estava rolada.
+      anchor: c => bigImg(c) || imgAnchor(c), wrapper: c => c,
+      sponsored: c => sponsoredText(c) || /(^|\n)\s*Ad\s*(\n|$)/.test(c.innerText || '') },
     // Os adaptadores abaixo não abriram no navegador automatizado (login/403): conservadores,
     // por seletor semântico + texto. Sem cartão encontrado, o script não faz nada no site.
     { id: 'mercadolivre', name: 'Mercado Livre', host: /(^|\.)mercadolivre\.com\.br$/, scale: 5, product: /(MLB-?\d{6,})/i, experimental: true,
@@ -165,10 +187,6 @@
         return { rating: r ? toRating(r.textContent.trim()) : g.rating, count: nm ? toInt(nm[1]) : g.count, countKind: nm ? 'reviews' : g.countKind };
       },
       anchor: imgAnchor, wrapper: c => c, sponsored: c => sponsoredText(c) || !!c.querySelector('.poly-component__ads-promotions, [class*="ads-promotions"]') },
-    { id: 'shopee', name: 'Shopee', host: /(^|\.)shopee\.com\.br$/, scale: 5, product: /-i\.(\d+\.\d+)/, experimental: true,
-      cards: () => outermost(qsa('[data-sqe="item"], li.shopee-search-item-result__item')),
-      extract: c => { const L = linesOf(c); const r = bareRating(c, L); const g = generic(c); return { rating: r ? toRating(r[1]) : g.rating, count: g.count, countKind: g.countKind }; },
-      anchor: imgAnchor, wrapper: c => c, sponsored: c => sponsoredText(c) || /(^|\n)\s*Ad\s*(\n|$)/.test(c.innerText || '') },
     { id: 'magalu', name: 'Magalu', host: /(^|\.)magazineluiza\.com\.br$/, scale: 5, product: /\/p\/([a-z0-9]{6,})\//i, experimental: true,
       cards: () => outermost(qsa('[data-testid="product-card-container"], li[data-testid="product-card"]')),
       extract: c => {
@@ -383,6 +401,23 @@
   }
   const validCard = c => productKeys(c).size <= 1 && productImages(c) <= 1;
 
+  // O que ocultar: o item da grade (filho direto do contêiner de resultados), não um elemento interno do
+  // cartão, senão fica um buraco. Sobe enquanto o pai não contém outro cartão e não é bem maior que o
+  // cartão (uma seção com um cartão só não some inteira). Não depende das classes com hash do site.
+  function gridItems(ws) {
+    const n = new Map();
+    for (const w of ws) for (let p = w.parentElement; p && p !== document.body; p = p.parentElement) n.set(p, (n.get(p) || 0) + 1);
+    return ws.map(w => {
+      const r = w.getBoundingClientRect(); let e = w;
+      for (let p = w.parentElement; p && p !== document.body && n.get(p) === 1; p = p.parentElement) {
+        const pr = p.getBoundingClientRect();
+        if (pr.width > r.width * 1.25 + 24 || pr.height > r.height * 1.25 + 24) break;
+        e = p;
+      }
+      return e;
+    });
+  }
+
   function scan() {
     timer = 0; dirty = false;
     const t0 = performance.now();
@@ -408,14 +443,15 @@
         const a = A.anchor(c) || c, cr = c.getBoundingClientRect(), ar = a.getBoundingClientRect();
         const isStatic = getComputedStyle(c).position === 'static';
         // Absoluto é relativo à borda interna do cartão: desconta a borda (clientTop/Left).
-        return { c, w, d, sp, isStatic, top: ar.top - cr.top - c.clientTop, left: ar.left - cr.left - c.clientLeft, v: verdict(d) };
+        return { c, w, item: w, d, sp, isStatic, top: ar.top - cr.top - c.clientTop, left: ar.left - cr.left - c.clientLeft, v: verdict(d) };
       });
+      gridItems(reads.map(r => r.w)).forEach((e, i) => { reads[i].item = e; });
       for (const r of reads) {
-        stats[r.v]++; known.add(r.c); known.add(r.w);
+        stats[r.v]++; known.add(r.c); known.add(r.w); known.add(r.item);
         const spDrop = r.sp && cfg.sponsoredOnlyIfPass && r.v !== 'pass';
-        if (spDrop && canHide) { r.w.classList.add('us-sf-hide'); stats.spHidden++; continue; }
+        if (spDrop && canHide) { r.item.classList.add('us-sf-hide'); stats.spHidden++; continue; }
         if (r.v === 'fail' || spDrop) {
-          if (cfg.mode === 'hide' && canHide) { r.w.classList.add('us-sf-hide'); stats.hidden++; continue; }
+          if (cfg.mode === 'hide' && canHide) { r.item.classList.add('us-sf-hide'); stats.hidden++; continue; }
           r.c.classList.add('us-sf-dim'); stats.dimmed++;
         }
         r.c.classList.add('us-sf-card');
