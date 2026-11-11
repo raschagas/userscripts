@@ -103,7 +103,13 @@
   }
   const generic = el => { const L = linesOf(el); return Object.assign({ rating: genericRating(el, L) }, genericCount(el, L)); };
   const sponsoredText = el => SPONSORED.test(el.innerText || '');
-  const imgAnchor = c => { const i = c.querySelector('img'); return i ? (i.parentElement && c.contains(i.parentElement) && i.parentElement !== c ? i.parentElement : i) : c; };
+  // Pai da primeira imagem; sem caixa (display:contents dá retângulo zerado), a própria imagem.
+  const imgAnchor = c => {
+    const i = c.querySelector('img'); if (!i) return c;
+    const p = i.parentElement;
+    if (p && p !== c && c.contains(p)) { const r = p.getBoundingClientRect(); if (r.width && r.height) return p; }
+    return i;
+  };
   // A maior imagem já desenhada do cartão (a foto do produto); selos, bandeiras e ícones ficam de fora.
   function bigImg(c, sel) {
     let best = null, area = 400;
@@ -160,11 +166,13 @@
       cards: () => qsa('a[href*="/produto/"].group'),
       extract: c => { const m = /Avalia[cç][aã]o\s*([\d.,]+)\s*de\s*5/i.exec(c.innerText || ''); return { rating: m ? toRating(m[1]) : generic(c).rating, count: null, countKind: null }; },
       anchor: imgAnchor, wrapper: c => c, sponsored: c => sponsoredText(c) },
-    // Shopee: a busca exige login (o navegador automatizado não abre); conferida com o dono logado no Edge.
+    // Shopee: a busca exige login (o navegador automatizado não abre); conferida com o dono logado no Edge
+    // e com um esqueleto do DOM real. Os últimos li chegam vazios (carregam ao rolar): não são cartões ainda.
     { id: 'shopee', name: 'Shopee', host: /(^|\.)shopee\.com\.br$/, scale: 5, product: /-i\.(\d+\.\d+)/,
-      cards: () => outermost(qsa('li.shopee-search-item-result__item, [data-sqe="item"]')),
+      cards: () => outermost(qsa('li.shopee-search-item-result__item, [data-sqe="item"]')).filter(c => c.querySelector('a[href]')),
       extract: c => { const L = linesOf(c); const r = bareRating(c, L); const g = generic(c); return { rating: r ? toRating(r[1]) : g.rating, count: g.count, countKind: g.countKind }; },
-      // A foto é a maior imagem do cartão: o primeiro <img> pode ser um selo junto do título.
+      // A foto é a maior imagem (absoluta, 100% do quadro). O pai dela é um <picture> com display:contents,
+      // sem caixa (retângulo zerado): ancorar nele punha o círculo fora da foto quando a página estava rolada.
       anchor: c => bigImg(c) || imgAnchor(c), wrapper: c => c,
       sponsored: c => sponsoredText(c) || /(^|\n)\s*Ad\s*(\n|$)/.test(c.innerText || '') },
     // Os adaptadores abaixo não abriram no navegador automatizado (login/403): conservadores,

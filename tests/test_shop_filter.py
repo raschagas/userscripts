@@ -369,25 +369,40 @@ def shopee(make_ctx, **kw):
     return ctx, page
 
 
+DOTS_SHOPEE = """() => [...document.querySelectorAll('li.shopee-search-item-result__item')].filter(li => li.querySelector('.us-sf-dot')).map(li => {
+  const i = li.querySelector('img.foto').getBoundingClientRect(), o = li.querySelector('.us-sf-dot > i').getBoundingClientRect();
+  return [li.dataset.i, Math.round(o.top - i.top), Math.round(o.left - i.left)]; })"""
+
+
 def test_shopee_circulo_no_canto_da_foto(make_ctx):
     ctx, page = shopee(make_ctx)
     inject(page, S)
-    d = page.evaluate("""() => [...document.querySelectorAll('li.shopee-search-item-result__item')].filter(li => li.querySelector('.us-sf-dot')).map(li => {
-      const i = li.querySelector('img.main').getBoundingClientRect(), o = li.querySelector('.us-sf-dot > i').getBoundingClientRect();
-      return [li.dataset.i, o.top - i.top, o.left - i.left, o.bottom <= i.bottom]; })""")
-    assert d and all(x[1:] == [12, 12, True] for x in d), d
-    c = page.evaluate(GRID, "li.shopee-search-item-result__item")
+    d = page.evaluate(DOTS_SHOPEE)
+    assert [x[0] for x in d] == ["ok", "ruim", "poucas", "ok2", "nada", "ok3"], "li vazio (ainda carregando) não ganha círculo"
+    assert all(x[1:] == [12, 12] for x in d), d
+    # página rolada: o <picture> (display:contents) não tem caixa; o círculo continua no canto da foto
+    page.evaluate("scrollTo(0, 260)")
+    page.wait_for_timeout(200)
+    page.locator("#us-shop-filter .pill").click()
+    set_range(page, "#r", 4.6)  # força nova varredura com a página rolada
+    d = page.evaluate(DOTS_SHOPEE)
+    assert page.evaluate("scrollY") > 200 and all(x[1:] == [12, 12] for x in d), d
+    c = page.evaluate(GRID, "li[data-i]")
     assert {k: v["v"] for k, v in c.items()} == {"ok": "pass", "ruim": "fail", "poucas": "fail", "ad": None, "ok2": "pass", "nada": "unknown", "ok3": "pass"}
     assert c["ad"]["hidden"], "Shopee verificada: patrocinado reprovado some"
-    page.locator("#us-shop-filter .pill").click()
+    assert page.evaluate(STATS)["total"] == "7", "7 cartões; os 3 li vazios não contam"
     assert shadow(page, "return r.querySelector('.note.exp')") is None, "sem aviso de experimental"
+    page.evaluate("fill()")  # li vazio carrega depois: vira cartão
+    page.wait_for_timeout(700)
+    assert page.evaluate(GRID, "li[data-i]")["tarde"]["v"] == "fail"
+    assert page.errors == []
 
 
 def test_shopee_ocultar_reprovados_tira_o_li(make_ctx):
     ctx, page = shopee(make_ctx, hide=True)
-    before = page.evaluate(GRID, "li.shopee-search-item-result__item")
+    before = page.evaluate(GRID, "li[data-i]")
     inject(page, S)
-    after = page.evaluate(GRID, "li.shopee-search-item-result__item")
+    after = page.evaluate(GRID, "li[data-i]")
     assert sorted(k for k, v in after.items() if v["hidden"]) == ["ad", "poucas", "ruim"]
     assert page.evaluate("[...document.querySelectorAll('.us-sf-hide')].every(e => e.matches('li.shopee-search-item-result__item'))")
     assert (after["ok2"]["x"], after["ok2"]["y"]) == (before["ruim"]["x"], before["ruim"]["y"])
