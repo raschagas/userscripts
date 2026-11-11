@@ -1,0 +1,25 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Amazon.com.br : suporte monitor (fixture)</title>
+<style>*{box-sizing:border-box}body{margin:0;font:13px/1.35 Arial,sans-serif;background:#fff;color:#0f1111}
+header{background:#131921;color:#fff;padding:12px 16px;font-weight:700;position:sticky;top:0;z-index:10}
+.s-main-slot{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;padding:14px}
+.s-result-item{border:1px solid #ddd;border-radius:8px;overflow:hidden;background:#fff}
+.s-product-image-container{margin:10px;height:150px;background:linear-gradient(135deg,#e5e7eb,#9ca3af)}
+.b{padding:0 10px 10px}.sp{color:#565959;font-size:12px}.p{font-size:17px;font-weight:700}</style></head><body>
+<header>amazon.com.br — fixture de testes</header>
+<div class="s-main-slot" id="g"></div>
+<script>
+// [id, nota, classificações, patrocinado, título]. null = o site não mostra.
+const D=[['pass',4.7,812,false,'Suporte articulado para monitor'],['lowrate',4.0,900,false,'Suporte simples de mesa'],
+['lowcount',4.8,40,false,'Braço a gás premium'],['sppass',4.6,500,true,'Suporte duplo patrocinado bom'],
+['spfail',3.9,2000,true,'Suporte patrocinado ruim'],['spnone',null,null,true,'Suporte patrocinado sem avaliações'],
+['none',null,null,false,'Suporte novo sem avaliações'],['countonly',null,300,false,'Suporte só com contagem'],
+['rateonly',4.9,null,false,'Suporte só com nota'],['zero',4.9,0,false,'Suporte com zero classificações'],
+['mil',4.5,'2,3 mil',false,'Suporte com contagem em mil']];
+function card([id,r,n,sp,t]){return `<div data-component-type="s-search-result" class="s-result-item" data-id="${id}">
+<div class="s-product-image-container"><img alt="" width="1" height="1"></div><div class="b">${sp?'<span class="puis-sponsored-label-text">Patrocinado</span>':''}
+<h2>${t}</h2>${r==null?'':`<span class="a-icon-alt">${String(r).replace('.',',')} de 5 estrelas</span>`}
+${n==null?'':`<span aria-label="${typeof n==='number'?n.toLocaleString('pt-BR'):n} classificações">(${n})</span>`}<div class="p">R$ 99,90</div></div></div>`}
+document.getElementById('g').innerHTML=D.map(card).join('');
+window.addMore=()=>document.getElementById('g').insertAdjacentHTML('beforeend',card(['late',3.1,50,false,'Carregado depois (rolagem infinita)']));
+window.reuse=()=>{const c=document.querySelector('[data-id="pass"]');c.querySelector('.a-icon-alt').textContent='2,0 de 5 estrelas';};
+</script></body></html>

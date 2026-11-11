@@ -1,0 +1,11 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Loja exemplo (nota 0–10)</title>
+<style>*{box-sizing:border-box}body{margin:0;font:13px/1.35 system-ui;background:#f4f4f5;color:#222}
+header{background:#0f766e;color:#fff;padding:12px 16px;font-weight:700}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;padding:12px}
+.card{background:#fff;border-radius:10px;overflow:hidden}.img{height:140px;background:linear-gradient(135deg,#d4d4d8,#a1a1aa)}
+.b{padding:9px}.p{font-weight:700;font-size:15px;margin-top:4px}.r{color:#555;font-size:12px}</style></head>
+<body><header>Loja exemplo — notas de 0 a 10 (fixture para escala variável)</header><div class="grid" id="g"></div>
+<script>
+const d=[[9.6,1820,'Cadeira ergonômica'],[7.8,412,'Cadeira gamer'],[9.2,96,'Cadeira tela mesh'],[8.9,3100,'Banqueta regulável'],[9.4,640,'Apoio de pés'],[null,null,'Cadeira infantil (sem avaliações)'],[6.5,58,'Cadeira dobrável'],[9.8,2210,'Mesa regulável']];
+g.innerHTML=d.map(([r,n,t],i)=>`<div class="card" data-i="${i}"><div class="img"></div><div class="b">${t}<div class="p">R$ 199,00</div><div class="r">${r==null?'Sem avaliações':'Nota '+String(r).replace('.',',')+'/10 · '+n.toLocaleString('pt-BR')+' avaliações'}</div></div></div>`).join('')
+</script></body></html>

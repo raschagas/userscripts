@@ -1,0 +1,20 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Cookies: negativos (fixture)</title>
+<style>body{margin:0;font:14px system-ui}.fx{position:fixed;left:12px;right:12px;background:#fff;border:1px solid #999;padding:10px}
+header{position:sticky;top:0;background:#eee;padding:8px;display:flex;gap:12px}</style>
+<script>window.clicked=[];const hit=k=>window.clicked.push(k);</script></head><body>
+<header id="topo"><a href="#p" onclick="hit('header-link')">Privacidade</a><button onclick="hit('header-continuar')">Continuar</button></header>
+<main style="height:1400px;padding:12px">
+<form id="busca" onsubmit="return false"><input name="q" value="x"><button type="button" onclick="hit('form-ok')">OK</button>
+<footer>Ao buscar você concorda com a política de privacidade.</footer></form>
+</main>
+<div class="fx" role="dialog" aria-modal="true" style="top:60px"><h2>Entrar com gov.br</h2>
+<form onsubmit="hit('login-submit');return false"><label>CPF <input name="cpf" value="000.000.000-00"></label>
+<input type="submit" value="Continuar" onclick="hit('login-submit-click')"></form><a href="#pp">Política de Privacidade</a></div>
+<div class="fx" style="top:260px">Confirmar pagamento de R$ 10,00 · seus dados seguem a LGPD.<button onclick="hit('pagamento-continuar')">Continuar</button></div>
+<div class="fx" style="top:340px">Autoriza o compartilhamento dos seus dados pessoais com parceiros?
+<button onclick="hit('dados-nao')">Não</button><button onclick="hit('dados-concordo')">Concordo</button></div>
+<div class="fx" style="top:420px">Ao entrar você aceita os cookies. Senha: <input type="password"><button type="button" onclick="hit('senha-cookies')">Aceitar cookies</button></div>
+<div class="fx" style="top:500px">Atualizamos nossos Termos de Uso e a Política de Privacidade, incluindo o uso de cookies e o compartilhamento de dados com parceiros. <button onclick="hit('termos-aceitar-tudo')">Aceitar tudo</button><button onclick="hit('termos-revisar')">Revisar</button></div>
+<div class="fx" style="top:580px">Permitir notificações e cookies de localização? <button onclick="hit('permissoes-permitir-todos')">Permitir todos</button></div>
+<div class="fx" style="top:660px">Usamos cookies para melhorar sua experiência. <button onclick="hit('cookies-fechar')">Fechar</button></div>
+</body></html>

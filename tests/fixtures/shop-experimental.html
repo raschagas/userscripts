@@ -1,0 +1,15 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Loja experimental (fixture)</title>
+<style>body{margin:0;font:13px system-ui}.g{display:grid;grid-template-columns:repeat(4,240px);gap:12px;padding:12px}
+[data-testid]{background:#fff;border:1px solid #ddd;padding:6px}img{display:block;width:140px;height:140px;background:#ccc}
+.shelf{grid-column:1/-1;display:flex;gap:12px}</style></head><body><header id="relogio">00:00:00</header>
+<div class="g" id="g">
+<div data-testid="product-card" data-i="ok"><a href="/produto/111111"><img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><h3>Fone bom</h3></a><div>4,8 de 5</div><div>(300 avaliações)</div></div>
+<div data-testid="product-card" data-i="ruim"><a href="/produto/222222"><img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><h3>Fone ruim</h3></a><div>3,1 de 5</div><div>(900 avaliações)</div></div>
+<div data-testid="product-card" data-i="sp"><span>Patrocinado</span><a href="/produto/333333"><img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><h3>Fone patrocinado ruim</h3></a><div>2,0 de 5</div><div>(50 avaliações)</div></div>
+<div data-testid="product-card-shelf" class="shelf" data-i="shelf">
+ <div><a href="/produto/444444"><img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=#a"><h3>Item A</h3></a><div>4,9 de 5</div><div>(800 avaliações)</div></div>
+ <div><a href="/produto/555555"><img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=#b"><h3>Item B</h3></a><div>4,9 de 5</div><div>(800 avaliações)</div></div>
+</div>
+</div>
+<script>window.startClock=()=>{let n=0;setInterval(()=>{document.getElementById('relogio').textContent='00:00:'+String(++n).padStart(2,'0')},1000)};</script>
+</body></html>

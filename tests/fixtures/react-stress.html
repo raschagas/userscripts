@@ -1,0 +1,17 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Teste de app reativo</title>
+<style>body{font:14px system-ui;margin:0;background:#fff}.top{background:#0f6cbd;color:#fff;padding:10px 16px}
+#list{height:300px;overflow:auto;border:1px solid #ddd;margin:16px;width:420px}.it{padding:10px;border-bottom:1px solid #eee}
+#compose{margin:16px;width:420px;height:80px;border:1px solid #aaa;padding:6px}</style></head><body>
+<div class="top">App reativo (simula Outlook/Teams: re-renderiza o texto a cada 300 ms e rola dentro de um painel)</div>
+<div id="list"></div>
+<div id="compose" contenteditable="true">Rascunho para Beltrana Siqueira, CPF 123.456.789-09 (campo editável: não deve ser borrado nem alterado)</div>
+<div id="log" style="margin:16px;color:#555"></div>
+<script>
+const people=['Fulano de Tal','Beltrana Siqueira','Ciclano Prado','Fulana Exemplo','Beltrano Modelo','Ciclana Teste','Fulano Segundo','Beltrana Terceira','Ciclano Quarto','Fulana Quinta','Beltrano Sexto','Ciclana Sétima'];
+let tick=0,errors=0;window.addEventListener('error',()=>errors++);
+function render(){tick++;const list=document.getElementById('list');
+ // substitui nós de texto existentes por novos, como um framework faria
+ list.innerHTML=people.map((p,i)=>`<div class="it"><b>${p}</b><br><span>tel. (61) 9${(8000+i*37+tick)%9999}-12${(10+i)%99} · ${p.split(' ')[0].toLowerCase()}@exemplo.com</span></div>`).join('');
+ document.getElementById('log').textContent=`renders: ${tick} · erros JS: ${errors}`;}
+render();setInterval(render,300);
+</script></body></html>

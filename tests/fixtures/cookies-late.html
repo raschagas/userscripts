@@ -1,0 +1,6 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Cookies tardios (fixture)</title>
+<style>.lgpd{position:fixed;bottom:0;left:0;right:0;background:#eee;padding:12px}</style></head><body>
+<p>O aviso aparece depois de window.showBanner(ms).</p>
+<script>window.showBanner=(ms)=>setTimeout(()=>{document.body.insertAdjacentHTML('beforeend','<div class="lgpd lgpd-consent"><p>Utilizamos cookies e dados pessoais (LGPD).</p><button onclick="this.parentElement.remove();window.accepted=\'late\'">Aceitar todos</button></div>')},ms);
+window.showBanner(+(new URLSearchParams(location.search).get('ms')||2000));</script>
+</body></html>
