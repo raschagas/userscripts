@@ -312,3 +312,85 @@ def test_posicao_relative_so_em_cartao_static(make_ctx):
     r = page.evaluate("""() => ['pass', 'lowrate'].map(i => { const c = document.querySelector(`[data-id="${i}"]`);
       return [c.classList.contains('us-sf-rel'), getComputedStyle(c).position]; })""")
     assert r == [[False, "sticky"], [True, "relative"]]
+
+
+# Item da grade ocupado por cada cartão: posição do canto, oculto e se é filho direto do contêiner.
+GRID = """sel => Object.fromEntries([...document.querySelectorAll(sel)].map(e => { const r = e.getBoundingClientRect();
+  return [e.dataset.i, {x: Math.round(r.left), y: Math.round(r.top), hidden: getComputedStyle(e).display === 'none',
+    v: e.querySelector('.us-sf-dot')?.dataset.v || null}]; }))"""
+
+
+def test_aliexpress_ocultar_tira_o_item_da_grade_sem_buraco(make_ctx):
+    ctx = make_ctx()
+    ctx.add_init_script("localStorage.setItem('__gm:site:aliexpress', JSON.stringify({mode: 'hide'}))")
+    serve(ctx, "https://pt.aliexpress.com/**", "ali-grade.html")
+    page = open_page(ctx, "https://pt.aliexpress.com/w/wholesale-descalcificador.html")
+    before = page.evaluate(GRID, "#card-list > *")
+    inject(page, S)
+    after = page.evaluate(GRID, "#card-list > *")
+    assert [k for k, v in after.items() if v["hidden"]] == ["b", "e"]
+    # o próprio filho direto de #card-list some (não o invólucro interno) e os seguintes sobem uma casa
+    assert page.evaluate("[...document.querySelectorAll('.us-sf-hide')].every(e => e.parentElement.id === 'card-list')")
+    assert (after["c"]["x"], after["c"]["y"]) == (before["b"]["x"], before["b"]["y"])
+    assert (after["f"]["x"], after["f"]["y"]) == (before["d"]["x"], before["d"]["y"])
+    assert after["a"]["v"] == "pass" and after["h"]["v"] == "pass"
+    st = page.evaluate(STATS)
+    assert (st["total"], st["fail"], st["hidden"]) == ("8", "2", "2")
+    # desligar ocultar devolve os itens, esmaecidos
+    page.locator("#us-shop-filter .pill").click()
+    page.locator('#us-shop-filter .sw[data-k="hide"]').click()
+    back = page.evaluate(GRID, "#card-list > *")
+    assert not any(v["hidden"] for v in back.values()) and back["b"]["v"] == "fail"
+    assert page.errors == []
+
+
+def test_amazon_circulo_alinhado_na_moldura_da_foto(make_ctx):
+    ctx = make_ctx()
+    serve(ctx, "https://www.amazon.com.br/**", "shop-amazon-grade.html")
+    page = open_page(ctx, AMZ)
+    inject(page, S)
+    d = page.evaluate("""() => [...document.querySelectorAll('[data-component-type="s-search-result"]')].map(c => {
+      const f = c.querySelector('.s-image-square-aspect').getBoundingClientRect(), i = c.querySelector('.s-image').getBoundingClientRect();
+      const o = c.querySelector('.us-sf-dot > i').getBoundingClientRect();
+      return {id: c.dataset.id, frame: [o.top - f.top, o.left - f.left], img: [o.top - i.top, o.left - i.left], top: o.top, left: o.left - c.getBoundingClientRect().left}; })""")
+    assert all(x["frame"] == [12, 12] for x in d), d
+    assert any(x["img"] != [12, 12] for x in d), "a foto varia dentro da moldura: o círculo não segue a foto"
+    for row in (d[:4], d[4:]):  # mesma fileira, com ou sem selo: mesma altura e mesma distância da borda do cartão
+        assert len({x["top"] for x in row}) == 1 and len({x["left"] for x in row}) == 1, row
+    assert page.errors == []
+
+
+def shopee(make_ctx, **kw):
+    ctx = make_ctx()
+    if kw.get("hide"):
+        ctx.add_init_script("localStorage.setItem('__gm:site:shopee', JSON.stringify({mode: 'hide'}))")
+    serve(ctx, "https://shopee.com.br/**", "shop-shopee.html")
+    page = open_page(ctx, "https://shopee.com.br/search?keyword=descalcificador")
+    return ctx, page
+
+
+def test_shopee_circulo_no_canto_da_foto(make_ctx):
+    ctx, page = shopee(make_ctx)
+    inject(page, S)
+    d = page.evaluate("""() => [...document.querySelectorAll('li.shopee-search-item-result__item')].filter(li => li.querySelector('.us-sf-dot')).map(li => {
+      const i = li.querySelector('img.main').getBoundingClientRect(), o = li.querySelector('.us-sf-dot > i').getBoundingClientRect();
+      return [li.dataset.i, o.top - i.top, o.left - i.left, o.bottom <= i.bottom]; })""")
+    assert d and all(x[1:] == [12, 12, True] for x in d), d
+    c = page.evaluate(GRID, "li.shopee-search-item-result__item")
+    assert {k: v["v"] for k, v in c.items()} == {"ok": "pass", "ruim": "fail", "poucas": "fail", "ad": None, "ok2": "pass", "nada": "unknown", "ok3": "pass"}
+    assert c["ad"]["hidden"], "Shopee verificada: patrocinado reprovado some"
+    page.locator("#us-shop-filter .pill").click()
+    assert shadow(page, "return r.querySelector('.note.exp')") is None, "sem aviso de experimental"
+
+
+def test_shopee_ocultar_reprovados_tira_o_li(make_ctx):
+    ctx, page = shopee(make_ctx, hide=True)
+    before = page.evaluate(GRID, "li.shopee-search-item-result__item")
+    inject(page, S)
+    after = page.evaluate(GRID, "li.shopee-search-item-result__item")
+    assert sorted(k for k, v in after.items() if v["hidden"]) == ["ad", "poucas", "ruim"]
+    assert page.evaluate("[...document.querySelectorAll('.us-sf-hide')].every(e => e.matches('li.shopee-search-item-result__item'))")
+    assert (after["ok2"]["x"], after["ok2"]["y"]) == (before["ruim"]["x"], before["ruim"]["y"])
+    st = page.evaluate(STATS)
+    assert (st["fail"], st["hidden"], st["spHidden"], st["dimmed"]) == ("3", "2", "1", "0")
+    assert page.errors == []

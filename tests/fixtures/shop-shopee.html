@@ -1,0 +1,21 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Shopee Brasil busca (fixture)</title>
+<!-- Estrutura conhecida da busca (ul.shopee-search-item-result__items > li.shopee-search-item-result__item),
+     ainda não conferida com o esqueleto do DOM real. A foto fica num quadro com padding-top:100% e <img>
+     absoluto dentro de um <picture> em linha: o pai do <img> mede só a linha ABAIXO da foto (sobre o título). -->
+<style>*{box-sizing:border-box}body{margin:0;font:13px system-ui;background:#f5f5f5}
+.shopee-search-item-result__items{display:grid;grid-template-columns:repeat(5,190px);gap:10px;list-style:none;margin:0;padding:10px}
+.shopee-search-item-result__item{background:#fff}.contents{display:block;color:#222;text-decoration:none}
+.pt-full{position:relative;padding-top:100%}.pt-full img.main{position:absolute;inset:0;width:100%;height:100%;background:#ccc}
+.pt-full .moldura{position:absolute;inset:0;pointer-events:none}.p-2{padding:8px}.selo{width:28px;height:14px;vertical-align:middle;background:#ee4d2d}</style></head><body>
+<ul class="row shopee-search-item-result__items" id="g"></ul>
+<script>
+// [id, nota, vendidos, anúncio, selo junto do título]
+const D=[['ok','5.0','9mil+ Vendido(s)',false,true],['ruim','4.2','2mil+ Vendido(s)',false,false],['poucas','4.9','30 Vendido(s)',false,true],
+['ad','4.0','500 Vendido(s)',true,false],['ok2','4.8','1,2mil Vendido(s)',false,false],['nada',null,null,false,false],['ok3','4.7','300 Vendido(s)',false,false]];
+document.getElementById('g').innerHTML=D.map(([id,r,n,ad,selo],k)=>`<li class="col-xs-2-4 shopee-search-item-result__item" data-sqe="item" data-i="${id}">
+<div class="h-full"><a class="contents" href="/Produto-${id}-i.12345${k}.67890${k}"><div class="flex flex-col">
+<div class="pt-full"><picture><img class="main" alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></picture><div class="moldura"></div></div>
+<div class="p-2"><div class="line-clamp-2">${selo?'<img class="selo" alt="Indicado" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=">':''} Produto ${id}</div>
+<div>R$ 29,90</div>${ad?'<div>Ad</div>':''}<div class="flex">${r?`<div>${r}</div>`:''}${n?`<div>${n}</div>`:''}</div><div>São Paulo</div></div>
+</div></a></div></li>`).join('');
+</script></body></html>
