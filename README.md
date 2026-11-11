@@ -75,20 +75,58 @@ Menu: **Abrir ajustes do filtro** · **Desligar/ligar neste site**.
 
 ## Dados pessoais (`dados-pessoais.user.js`)
 
-Borra nomes, CPF, CNPJ, RG (só com "RG"/"identidade"/"SSP" por perto), telefones, e-mails, CEP,
-endereços, valores em R$, agência/conta, cartões e anexos com nome sensível (RG, CPF, laudo,
-extrato…). Desenha caixas com desfoque **por cima** da página — não altera nem envolve o texto,
-então funciona em apps reativos (Outlook, Teams, WhatsApp, Gmail). Não borra campos editáveis nem
-`svg`, respeita painéis com rolagem e o que está coberto por menus.
+Versão 2.0.0. Um só script, com um adaptador por app sobre o mesmo motor (mesmo atalho, mesmo
+estado). Desenha caixas com desfoque **por cima** da página — não altera nem envolve o texto, então
+funciona em apps reativos. Não borra campos editáveis (a caixa de escrever fica intocada) nem `svg`,
+respeita painéis com rolagem e o que está coberto por menus. Na dúvida, borra a mais: deixar escapar é
+pior.
 
-- Começa **desligado**. **Alt+Shift+P** liga e desliga (o estado fica salvo).
+**Nomes**
+
+- **Pela estrutura**: no Outlook Web e no Gmail, remetente e destinatários; no Teams, participantes e
+  autores. Os nomes achados ali entram num dicionário da página e passam a ser borrados também no
+  corpo do texto, inclusive sozinhos ("Abraço, Beltrana").
+- **Fallback geral**: duas ou mais palavras com maiúscula (com da/de/do/dos/e), menos meses, dias da
+  semana, cargos ("Deputado Fulano Silva" → só o nome), órgãos e lugares ("Câmara dos Deputados",
+  "São Paulo"), menus e produtos. Nomes em MAIÚSCULAS, "Sobrenome, Prenome" e "Prenome S." usam a
+  lista dos 4.000 prenomes mais frequentes do Censo 2010 do IBGE (via Brasil.IO, `genero-nomes`).
+- **Fotos de perfil nunca são borradas** (nem as iniciais no lugar da foto). Só QR codes (ex.: tela
+  de login do WhatsApp) e miniaturas de anexo com nome sensível.
+
+**Mensageiros** (WhatsApp Web, Telegram Web `/k` e `/a`, Chatwoot):
+
+- borra o nome de **toda** conversa, de grupo e individual, na lista lateral e no cabeçalho;
+- borra **todo** número de telefone, onde aparecer;
+- borra a prévia das mensagens na lista lateral;
+- **não** borra quem enviou, nem dentro da conversa nem na lateral: o prefixo "Fulano:" da prévia
+  fica legível; só o texto depois dele é borrado. Hora e contador de não lidas também ficam.
+- O Chatwoot é auto-hospedado: o script o reconhece pela estrutura (rota `/app/accounts/<n>/` ou
+  componentes do painel), não pelo endereço. Inclua o host do seu Chatwoot como regra `@match`
+  pessoal ([Sites extras por aparelho](#sites-extras-por-aparelho)); `app.chatwoot.com` já está
+  incluído.
+
+**Padrões**: CPF (inclusive mascarado e sem máscara com "CPF" por perto), CNPJ, RG (só com
+"RG"/"identidade"/"SSP"), CNH, título de eleitor, PIS/PASEP/NIS, passaporte, placa (antiga e
+Mercosul), data de nascimento com contexto ("nasc.", "nascimento", "DN"), telefones (+55 e
+internacionais, com e sem máscara; "61999999999" sozinho ou "fone 6132160000"), `@usuario`, e-mails,
+CEP, endereços, valores em R$, agência/conta, cartões, chave Pix aleatória, linha digitável de
+boleto, matrícula/ponto/Siape com contexto, IPv4 e anexos com nome sensível (RG, CPF, CNH, laudo,
+extrato, boleto…).
+
+**Uso**
+
+- Começa **desligado**. **Alt+Shift+P** liga e desliga (o estado fica salvo). Ligado, mostra o selo
+  **🔒 borrando** num canto — aparece nos prints; um clique nele desliga. Canto: valor
+  `canto_selo` no gerenciador (`inferior-esquerdo`, padrão; `inferior-direito`, `superior-esquerdo`,
+  `superior-direito`).
 - Passar o mouse sobre uma caixa revela só aquele item.
 - Menu: **Ligar/desligar (Alt+Shift+P)** · **Nomes extras a borrar…** (lista separada por vírgula,
-  ex.: `Fulano, Siqueira`; o nome precisa vir seguido de sobrenome com maiúscula) ·
-  **Nunca neste site** / **Voltar a borrar neste site**.
+  ex.: `Fulano, Siqueira`; cada nome vale sozinho, sem sobrenome) · **Nunca neste site** /
+  **Voltar a borrar neste site**.
 - Roda **só** em: Gmail, Google Contatos, Outlook pessoal (`outlook.live.com`), Outlook Web do
-  Microsoft 365 (`outlook.office.com`, `outlook.office365.com`), WhatsApp Web, Telegram Web e Teams
-  (`teams.microsoft.com`, `teams.cloud.microsoft`). Outros sites (intranet, homelab): veja
+  Microsoft 365 (`outlook.office.com`, `outlook.office365.com`), WhatsApp Web, Telegram Web, Teams
+  (`teams.microsoft.com`, `teams.cloud.microsoft`) e Chatwoot em nuvem (`app.chatwoot.com`). Outros
+  sites (Outlook da intranet, Chatwoot próprio, homelab): veja
   [Sites extras por aparelho](#sites-extras-por-aparelho).
 
 ## georritmo-links — links do homelab (`georritmo-links.user.js`)

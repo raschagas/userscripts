@@ -9,6 +9,7 @@ from conftest import SRC
 from matchpattern import _match_one, metadata, runs_on
 
 SCRIPTS = sorted(p.name for p in SRC.glob("*.user.js"))
+VERSIONS = {"dados-pessoais.user.js": "2.0.0"}  # demais scripts seguem em 1.0.0
 RAW = "https://raw.githubusercontent.com/raschagas/userscripts/main/src/{}"
 VERSIONS = {"shop-filter.user.js": "1.1.0"}  # demais scripts: 1.0.0
 
@@ -69,6 +70,8 @@ DP = "dados-pessoais.user.js"
     "https://outlook.office365.com/mail/",
     "https://web.whatsapp.com/",
     "https://web.telegram.org/a/",
+    "https://web.telegram.org/k/",
+    "https://app.chatwoot.com/app/accounts/1/conversations/2",
     "https://teams.microsoft.com/v2/",
     "https://teams.cloud.microsoft/",
 ])
@@ -82,6 +85,8 @@ def test_dados_pessoais_casa(url):
     "https://evil.com/?u=https://mail.google.com/",
     "https://mail.google.com.evil.com/",
     "https://outlook.office.com.evil.com/",
+    "https://app.chatwoot.com.evil.com/",
+    "https://chat.exemplo.com.br/app/accounts/1/conversations/2",
     "http://mail.google.com/",
     "https://intranet.example/",
     "http://192.0.2.15/",
@@ -95,7 +100,7 @@ def test_dados_pessoais_so_sites_genericos():
     hosts = {v.split("://", 1)[1].split("/", 1)[0] for k, v in meta_of(DP) if k == "match"}
     assert hosts == {"mail.google.com", "contacts.google.com", "outlook.live.com", "outlook.office.com",
                      "outlook.office365.com", "web.whatsapp.com", "web.telegram.org", "teams.microsoft.com",
-                     "teams.cloud.microsoft"}, hosts
+                     "teams.cloud.microsoft", "app.chatwoot.com"}, hosts
 
 
 @pytest.mark.parametrize("url,expected", [

@@ -1,0 +1,46 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Correio — Outlook (fixture)</title>
+<!-- Estrutura do Outlook Web (role=listbox/option, span[title=e-mail], aria-label "De:"/"Para:"); dados fictícios. -->
+<style>*{box-sizing:border-box}body{margin:0;font:13px/1.45 "Segoe UI",system-ui,sans-serif;color:#242424}
+#wrap{display:grid;grid-template-columns:150px 300px 1fr;height:100vh}nav div{padding:6px 10px}
+[role=listbox]{border-right:1px solid #e0e0e0;overflow:auto}[role=option]{display:flex;gap:8px;padding:8px 10px;border-bottom:1px solid #f0f0f0}
+.coin{width:32px;height:32px;border-radius:50%;flex:none}[role=option] .t{min-width:0}[role=option] span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+[role=main]{padding:14px 22px;overflow:auto}h1{font-size:18px;margin:0 0 8px}.hdr{display:flex;gap:10px;align-items:center;margin-bottom:6px}
+td{padding:1px 14px 1px 0}.att{display:flex;gap:10px;margin-top:8px}.att div{border:1px solid #ddd;border-radius:6px;padding:6px;display:flex;gap:6px;align-items:center}
+.att img{width:48px;height:36px;background:#ccc}</style></head><body>
+<div id="wrap">
+<nav role="navigation"><div id="nav1">Caixa de Entrada</div><div id="nav2">Itens Enviados</div><div id="nav3">Itens Excluídos</div><div id="nav4">Lixo Eletrônico</div><div id="nav5">Nova mensagem</div><div id="nav6">Microsoft Outlook</div></nav>
+<div role="listbox" aria-label="Lista de mensagens">
+ <div role="option" id="o1"><img class="coin" id="oav1" alt="" src="data:image/svg+xml;utf8,AVATARlt;svg xmlns='http://www.w3.org/2000/svg' width='40' height='40'AVATARgt;AVATARlt;circle cx='20' cy='20' r='20' fill='%2399aacc'/AVATARgt;AVATARlt;/svgAVATARgt;"><div class="t"><span title="beltrana.siqueira@exemplo.com.br" id="of1">Beltrana Siqueira</span><span>Re: documentos</span><span>Oi! Seguem os dados que faltavam</span></div></div>
+ <div role="option" id="o2"><img class="coin" id="oav2" alt="" src="data:image/svg+xml;utf8,AVATARlt;svg xmlns='http://www.w3.org/2000/svg' width='40' height='40'AVATARgt;AVATARlt;circle cx='20' cy='20' r='20' fill='%2399aacc'/AVATARgt;AVATARlt;/svgAVATARgt;"><div class="t"><span title="josefa.almeida@exemplo.com.br" id="of2">Almeida, Josefa</span><span>Escala de dezembro</span><span>Segue a escala atualizada</span></div></div>
+</div>
+<div role="main"><h1>Re: documentos</h1>
+ <div class="hdr"><img class="coin" id="oavr" alt="" src="data:image/svg+xml;utf8,AVATARlt;svg xmlns='http://www.w3.org/2000/svg' width='40' height='40'AVATARgt;AVATARlt;circle cx='20' cy='20' r='20' fill='%2399aacc'/AVATARgt;AVATARlt;/svgAVATARgt;"><div aria-label="De: Beltrana Siqueira" id="ofrom"><span title="beltrana.siqueira@exemplo.com.br">Beltrana Siqueira</span></div></div>
+ <div aria-label="Para: Josivaldo Pereira" id="oto"><span title="josivaldo.pereira@exemplo.com.br">Josivaldo Pereira</span></div>
+ <p><span id="ob1">Josivaldo</span>, conforme combinado com a Josefa, seguem os dados.</p>
+ <p>Falei com <span id="ob2">WELLINGTON SOUSA</span> e com <span id="ob3">Raimunda Nonata Lopes</span>; o cadastro está em nome de <span id="ob4">Siqueira, Josefa</span>.</p>
+ <table>
+  <tr><td>Celular</td><td id="r1">+55 61 99999-9999</td></tr>
+  <tr><td>Exterior</td><td id="r2">+1 415 555 0123</td></tr>
+  <tr><td id="r3">Celular: 61999999999</td></tr>
+  <tr><td id="r4">fone 6132160000</td></tr>
+  <tr><td>Telegram</td><td id="r5">@fulano_exemplo</td></tr>
+  <tr><td id="r6">CNH 01234567890</td></tr>
+  <tr><td id="r7">Título de eleitor 0123 4567 8901</td></tr>
+  <tr><td>PIS</td><td id="r8">123.45678.90-1</td></tr>
+  <tr><td id="r9">Passaporte FZ123456</td></tr>
+  <tr><td>Placa</td><td id="r10">ABC-1234</td></tr>
+  <tr><td>Placa Mercosul</td><td id="r11">BRA2E19</td></tr>
+  <tr><td id="r12">DN: 03/04/1980</td></tr>
+  <tr><td id="r13">nasc. 03/04/1980</td></tr>
+  <tr><td>Pix</td><td id="r14">3f2a9c1e-7b4d-4e8a-9c1f-2b3d4e5f6a7b</td></tr>
+  <tr><td>Boleto</td><td id="r15">23793.38128 60000.000003 00000.000400 1 84340000012345</td></tr>
+  <tr><td id="r16">Matrícula 123.456</td></tr>
+  <tr><td id="r17">Ponto 98765</td></tr>
+  <tr><td>IP</td><td id="r18">192.168.0.10</td></tr>
+ </table>
+ <div class="att"><div><img id="othumb" alt="RG-frente-verso.pdf" src="data:image/svg+xml;utf8,AVATARlt;svg xmlns='http://www.w3.org/2000/svg' width='40' height='40'AVATARgt;AVATARlt;circle cx='20' cy='20' r='20' fill='%2399aacc'/AVATARgt;AVATARlt;/svgAVATARgt;"><span>RG-frente-verso.pdf</span></div>
+  <div><img id="othumb2" alt="" src="data:image/svg+xml;utf8,AVATARlt;svg xmlns='http://www.w3.org/2000/svg' width='40' height='40'AVATARgt;AVATARlt;circle cx='20' cy='20' r='20' fill='%2399aacc'/AVATARgt;AVATARlt;/svgAVATARgt;"><span>laudo-exame.pdf</span></div>
+  <div><img id="othumb3" alt="" src="data:image/svg+xml;utf8,AVATARlt;svg xmlns='http://www.w3.org/2000/svg' width='40' height='40'AVATARgt;AVATARlt;circle cx='20' cy='20' r='20' fill='%2399aacc'/AVATARgt;AVATARlt;/svgAVATARgt;"><span>pauta-reuniao.pdf</span></div></div>
+ <p>Abraço,<br><span id="osig">Beltrana</span></p>
+ <div contenteditable="true" id="ocompose" style="border:1px solid #aaa;padding:6px">Resposta: Beltrana Siqueira, CPF 123.456.789-09</div>
+</div></div></body></html>
