@@ -11,6 +11,11 @@ from matchpattern import _match_one, metadata, runs_on
 SCRIPTS = sorted(p.name for p in SRC.glob("*.user.js"))
 RAW = "https://raw.githubusercontent.com/raschagas/userscripts/main/src/{}"
 VERSOES = {
+    "youtube-continuar.user.js": "1.0.0",
+    "reddit-clean.user.js": "1.0.0",
+    "google-clean.user.js": "1.0.0",
+    "amazon-links.user.js": "1.0.0",
+
     "cookies-aceitar.user.js": "1.1.0",
     "dados-pessoais.user.js": "2.0.0",
     "georritmo-links.user.js": "1.0.0",
@@ -23,7 +28,7 @@ def meta_of(name):
     return metadata((SRC / name).read_text(encoding="utf-8"))
 
 
-def test_cinco_scripts():
+def test_scripts_publicados():
     assert SCRIPTS == sorted(VERSOES)
 
 
@@ -47,7 +52,7 @@ def test_cabecalho(name):
     assert d["updateURL"] == [RAW.format(name)]
     assert d["name"] and d["description"]
     assert "require" not in d, "sem @require remoto"
-    assert set(d["grant"]) <= {"GM_getValue", "GM_setValue", "GM_registerMenuCommand"}, d["grant"]
+    assert set(d["grant"]) <= {"none", "GM_getValue", "GM_setValue", "GM_registerMenuCommand"}, d["grant"]
     assert "connect" not in d, "nenhum script faz rede"
     for k, v in m:  # comentário no fim da linha vira parte do valor
         assert "//" not in v or k in ("downloadURL", "updateURL", "match", "exclude", "namespace"), (k, v)

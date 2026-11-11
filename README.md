@@ -281,3 +281,12 @@ existe para os testes; o `@match` nunca injeta nesse host.
 
 `docs/screenshots/`: páginas reais em PC (1366×768) e celular (412×915) e fixtures com dados
 fictícios (borrão, escala 0–10, painel escuro).
+
+## Novos scripts 1.0.0
+
+- [YouTube — continuar assistindo](https://raw.githubusercontent.com/raschagas/userscripts/main/src/youtube-continuar.user.js): Confirma somente o aviso de inatividade do YouTube.
+- [Reddit — idioma original](https://raw.githubusercontent.com/raschagas/userscripts/main/src/reddit-clean.user.js): Remove tradução automática; old.reddit opcional no menu.
+- [Google — links diretos e Web opcional](https://raw.githubusercontent.com/raschagas/userscripts/main/src/google-clean.user.js): Preserva respostas por IA; oferece Web no menu e limpa links de resultados.
+- [Amazon — link limpo e Keepa](https://raw.githubusercontent.com/raschagas/userscripts/main/src/amazon-links.user.js): Oferece link do produto sem parâmetros e consulta ao Keepa somente por clique.
+
+Reddit mantém a interface atual por padrão; a opção old.reddit persiste no gerenciador. Google mantém a busca normal e a IA; Web só abre por escolha no menu. Amazon só mostra os links na página de produto (.com.br); nenhuma consulta ao Keepa ocorre antes do clique. YouTube confirma apenas o diálogo reconhecido de inatividade, sem retomar pausas manuais. Implementações originais, sem código copiado das propostas anteriores. Verificação em fixtures não substitui aceitação no Edge e nos aplicativos reais.
