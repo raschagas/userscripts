@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Filtro de lojas — nota e vendas em cada anúncio
 // @namespace    raschagas/userscripts
-// @version      1.2.1
+// @version      1.2.2
 // @description  Marca cada anúncio com um círculo verde, vermelho ou cinza pela nota e pela quantidade de avaliações ou vendas, esmaece ou oculta os reprovados, some com patrocinados reprovados e corrige links de combos do AliExpress. Ajustes por site.
 // @match        https://*.aliexpress.com/*
 // @match        https://www.amazon.com.br/*
@@ -134,6 +134,12 @@
         // Require an item link and image so campaign banners and navigation stay out.
         for (const c of qsa('a.productContainer[href*="/item/"], a[class*="prodContainer_"][href*="/item/"], a.nnCard[href*="/item/"]')) {
           if (seen.has(c) || !c.querySelector('img') || !/\/item\/\d{6,}\.html/i.test(c.getAttribute('href'))) continue;
+          seen.add(c); out.push(c);
+        }
+        // Desktop Bundle Deals' main grid uses JS-clickable divs with a product id,
+        // not anchors. Leave its click/add-to-cart handlers entirely native.
+        for (const c of qsa('div.productContainer[id]')) {
+          if (seen.has(c) || !/^\d{6,}$/.test(c.id) || !c.querySelector('.AIC-MI-container img')) continue;
           seen.add(c); out.push(c);
         }
         return outermost(out);

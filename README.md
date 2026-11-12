@@ -84,7 +84,8 @@ em página real não foi concluída porque o AliExpress apresentou CAPTCHA no am
 
 A versão 1.2.1 também reconhece os cartões de SuperOfertas (`Deals-HomePage`) e Combos de ofertas
 (`BundleDeals2`), no PC e no celular. Reavalia os cartões que a própria página acrescenta ao rolar;
-a continuação por páginas numeradas permanece exclusiva das buscas.
+a continuação por páginas numeradas permanece exclusiva das buscas. A versão 1.2.2 corrige
+também a grade principal de Combos no desktop, cujos cartões são elementos clicáveis sem links.
 
 Menu: **Abrir ajustes do filtro** · **Desligar/ligar neste site**.
 

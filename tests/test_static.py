@@ -20,7 +20,7 @@ VERSOES = {
     "cookies-aceitar.user.js": "1.1.0",
     "dados-pessoais.user.js": "2.0.0",
     "georritmo-links.user.js": "1.0.0",
-    "shop-filter.user.js": "1.2.1",
+    "shop-filter.user.js": "1.2.2",
     "unbloat.user.js": "1.0.0",
 }
 
