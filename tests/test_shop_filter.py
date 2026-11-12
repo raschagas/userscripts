@@ -548,3 +548,113 @@ def test_loader_scroll_resets_five_page_burst(make_ctx):
     assert page.evaluate('window.calls') == before_scroll + 5
     assert page.locator('.us-sf-more').get_attribute('data-state') == 'paused'
     assert 'cinco páginas' in page.locator('.us-sf-load-status').inner_text()
+
+# Item da grade ocupado por cada cartão: posição do canto, oculto e se é filho direto do contêiner.
+GRID = """sel => Object.fromEntries([...document.querySelectorAll(sel)].map(e => { const r = e.getBoundingClientRect();
+  return [e.dataset.i, {x: Math.round(r.left), y: Math.round(r.top), hidden: getComputedStyle(e).display === 'none',
+    v: e.querySelector('.us-sf-dot')?.dataset.v || null}]; }))"""
+
+
+def test_aliexpress_ocultar_tira_o_item_da_grade_sem_buraco(make_ctx):
+    ctx = make_ctx()
+    ctx.add_init_script("localStorage.setItem('__gm:site:aliexpress', JSON.stringify({mode: 'hide'}))")
+    serve(ctx, "https://pt.aliexpress.com/**", "ali-grade.html")
+    page = open_page(ctx, "https://pt.aliexpress.com/w/wholesale-descalcificador.html")
+    before = page.evaluate(GRID, "#card-list > *")
+    inject(page, S)
+    after = page.evaluate(GRID, "#card-list > *")
+    assert [k for k, v in after.items() if v["hidden"]] == ["b", "e"]
+    # o próprio filho direto de #card-list some (não o invólucro interno) e os seguintes sobem uma casa
+    assert page.evaluate("[...document.querySelectorAll('.us-sf-hide')].every(e => e.parentElement.id === 'card-list')")
+    assert (after["c"]["x"], after["c"]["y"]) == (before["b"]["x"], before["b"]["y"])
+    assert (after["f"]["x"], after["f"]["y"]) == (before["d"]["x"], before["d"]["y"])
+    assert after["a"]["v"] == "pass" and after["h"]["v"] == "pass"
+    st = page.evaluate(STATS)
+    assert (st["total"], st["fail"], st["hidden"]) == ("8", "2", "2")
+    # desligar ocultar devolve os itens, esmaecidos
+    page.locator("#us-shop-filter .pill").click()
+    page.locator('#us-shop-filter .sw[data-k="hide"]').click()
+    back = page.evaluate(GRID, "#card-list > *")
+    assert not any(v["hidden"] for v in back.values()) and back["b"]["v"] == "fail"
+    assert page.errors == []
+
+
+def test_amazon_circulo_alinhado_na_moldura_da_foto(make_ctx):
+    ctx = make_ctx()
+    serve(ctx, "https://www.amazon.com.br/**", "shop-amazon-grade.html")
+    page = open_page(ctx, AMZ)
+    inject(page, S)
+    d = page.evaluate("""() => [...document.querySelectorAll('[data-component-type="s-search-result"]')].map(c => {
+      const f = c.querySelector('.s-image-square-aspect').getBoundingClientRect(), i = c.querySelector('.s-image').getBoundingClientRect();
+      const o = c.querySelector('.us-sf-dot > i').getBoundingClientRect();
+      return {id: c.dataset.id, frame: [o.top - f.top, o.left - f.left], img: [o.top - i.top, o.left - i.left], top: o.top, left: o.left - c.getBoundingClientRect().left}; })""")
+    assert all(x["frame"] == [12, 12] for x in d), d
+    assert any(x["img"] != [12, 12] for x in d), "a foto varia dentro da moldura: o círculo não segue a foto"
+    for row in (d[:4], d[4:]):  # mesma fileira, com ou sem selo: mesma altura e mesma distância da borda do cartão
+        assert len({x["top"] for x in row}) == 1 and len({x["left"] for x in row}) == 1, row
+    assert page.errors == []
+
+
+def shopee(make_ctx, **kw):
+    ctx = make_ctx()
+    if kw.get("hide"):
+        ctx.add_init_script("localStorage.setItem('__gm:site:shopee', JSON.stringify({mode: 'hide'}))")
+    serve(ctx, "https://shopee.com.br/**", "shop-shopee.html")
+    page = open_page(ctx, "https://shopee.com.br/search?keyword=descalcificador")
+    return ctx, page
+
+
+DOTS_SHOPEE = """() => [...document.querySelectorAll('li.shopee-search-item-result__item')].filter(li => li.querySelector('.us-sf-dot')).map(li => {
+  const i = li.querySelector('img.foto').getBoundingClientRect(), o = li.querySelector('.us-sf-dot > i').getBoundingClientRect();
+  return [li.dataset.i, Math.round(o.top - i.top), Math.round(o.left - i.left)]; })"""
+
+
+def test_shopee_circulo_no_canto_da_foto(make_ctx):
+    ctx, page = shopee(make_ctx)
+    inject(page, S)
+    d = page.evaluate(DOTS_SHOPEE)
+    assert [x[0] for x in d] == ["ok", "ruim", "poucas", "ok2", "nada", "ok3"], "li vazio (ainda carregando) não ganha círculo"
+    assert all(x[1:] == [12, 12] for x in d), d
+    # página rolada: o <picture> (display:contents) não tem caixa; o círculo continua no canto da foto
+    page.evaluate("scrollTo(0, 260)")
+    page.wait_for_timeout(200)
+    page.locator("#us-shop-filter .pill").click()
+    set_range(page, "#r", 4.6)  # força nova varredura com a página rolada
+    d = page.evaluate(DOTS_SHOPEE)
+    assert page.evaluate("scrollY") > 200 and all(x[1:] == [12, 12] for x in d), d
+    c = page.evaluate(GRID, "li[data-i]")
+    assert {k: v["v"] for k, v in c.items()} == {"ok": "pass", "ruim": "fail", "poucas": "fail", "ad": None, "ok2": "pass", "nada": "unknown", "ok3": "pass"}
+    assert c["ad"]["hidden"], "Shopee verificada: patrocinado reprovado some"
+    assert page.evaluate(STATS)["total"] == "7", "7 cartões; os 3 li vazios não contam"
+    assert shadow(page, "return r.querySelector('.note.exp')") is None, "sem aviso de experimental"
+    page.evaluate("fill()")  # li vazio carrega depois: vira cartão
+    page.wait_for_timeout(700)
+    assert page.evaluate(GRID, "li[data-i]")["tarde"]["v"] == "fail"
+    assert page.errors == []
+
+
+def test_shopee_ocultar_reprovados_tira_o_li(make_ctx):
+    ctx, page = shopee(make_ctx, hide=True)
+    before = page.evaluate(GRID, "li[data-i]")
+    inject(page, S)
+    after = page.evaluate(GRID, "li[data-i]")
+    assert sorted(k for k, v in after.items() if v["hidden"]) == ["ad", "poucas", "ruim"]
+    assert page.evaluate("[...document.querySelectorAll('.us-sf-hide')].every(e => e.matches('li.shopee-search-item-result__item'))")
+    assert (after["ok2"]["x"], after["ok2"]["y"]) == (before["ruim"]["x"], before["ruim"]["y"])
+    st = page.evaluate(STATS)
+    assert (st["fail"], st["hidden"], st["spHidden"], st["dimmed"]) == ("3", "2", "1", "0")
+    assert page.errors == []
+
+
+def test_loader_single_hidden_card_does_not_hide_controls(make_ctx):
+    ctx = make_ctx()
+    ctx.add_init_script("localStorage.setItem('__gm:site:aliexpress', JSON.stringify({mode:'hide'}))")
+    body = _ali_html(_ali_payload(1, [_ali_item(1), _ali_item(2), _ali_item(3, rating=1)]))
+    ctx.route('https://pt.aliexpress.com/w/wholesale-loader.html', lambda r: r.fulfill(status=200, body=body))
+    ctx.route('https://pt.aliexpress.com/w/wholesale-loader.html?page=2', lambda r: r.fulfill(status=503, body='unavailable'))
+    page = open_page(ctx, 'https://pt.aliexpress.com/w/wholesale-loader.html')
+    inject(page, S)
+    page.wait_for_timeout(700)
+    assert page.locator('.us-sf-load-wrap.us-sf-hide').count() == 1
+    assert page.locator('.us-sf-more').is_visible()
+    assert page.get_by_role('button', name='Tentar novamente').is_visible()

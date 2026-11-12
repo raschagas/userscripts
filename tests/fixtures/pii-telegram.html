@@ -1,0 +1,35 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Telegram (fixture)</title>
+<!-- Estrutura do Telegram Web: coluna esquerda = versão K (/k), direita = versão A (/a); dados fictícios. -->
+<style>*{box-sizing:border-box}body{margin:0;font:14px/1.4 system-ui,sans-serif;display:flex;gap:20px;padding:10px}
+.col{width:640px;border:1px solid #ddd}.chatlist-chat,.ListItem{display:flex;gap:10px;padding:8px 10px;border-bottom:1px solid #eee;text-decoration:none;color:#000}
+.avatar-element,.Avatar{width:42px;height:42px;border-radius:50%;background:#7ab;color:#fff;display:flex;align-items:center;justify-content:center;flex:none}
+.Avatar img{width:42px;height:42px;border-radius:50%}.user-caption,.info{flex:1;min-width:0}.dialog-title,.info-row{display:flex;justify-content:space-between;margin:0}
+.dialog-subtitle,.subtitle p{margin:0;color:#707579;white-space:nowrap;overflow:hidden}.fullName{margin:0;font-size:15px}
+.chat-info,.MiddleHeader{padding:8px 12px;background:#f4f4f5}.bubbles,.MessageList{padding:10px;background:#dfe9d4}
+.bubble,.Message{background:#fff;border-radius:10px;padding:6px 10px;margin:6px 0;max-width:420px}.name,.message-title{color:#3390ec;font-weight:600}
+.form-control{border:1px solid #aaa;padding:6px;margin:8px}</style></head><body>
+<div class="col" id="k">
+ <ul class="chatlist" style="list-style:none;margin:0;padding:0">
+  <a class="chatlist-chat" id="k1"><div class="avatar-element" id="kav">CE</div><div class="user-caption">
+   <p class="dialog-title"><span class="user-title"><span class="peer-title" id="kn1">Condomínio Exemplo</span></span><span class="message-time"><span id="kt1">09:41</span></span></p>
+   <p class="dialog-subtitle" id="kp1"><span class="user-last-message"><span class="peer-title" id="ks1">Ciclano</span>: <span id="km1">a assembleia é às 20h no salão</span></span></p></div></a>
+  <a class="chatlist-chat" id="k2"><div class="avatar-element" id="kav2">VC</div><div class="user-caption">
+   <p class="dialog-title"><span class="user-title"><span class="peer-title" id="kn2">Valdirene Cardoso</span></span><span class="message-time"><span>ter</span></span></p>
+   <p class="dialog-subtitle" id="kp2"><span class="user-last-message" id="km2">meu telefone novo é +55 61 99999 1234</span></p></div></a>
+ </ul>
+ <div class="chat-info"><div class="person"><span class="peer-title" id="kh">Condomínio Exemplo</span> · <span class="info" id="khs">12 membros</span></div></div>
+ <div class="bubbles"><div class="bubble"><div class="bubble-content"><div class="name"><span class="peer-title" id="kbn">Ciclano Prado</span></div>
+  <div class="message" id="kbm">Vou falar com o @sindico_exemplo amanhã</div></div></div></div>
+ <div class="input-message-input form-control" contenteditable="true" id="kcompose">Resposta para Ciclano Prado, +55 61 99999 1234</div>
+</div>
+<div class="col" id="a">
+ <div id="LeftColumn"><div class="chat-list">
+  <div class="ListItem Chat" id="a1"><div class="Avatar" id="aav"><img alt="" src="data:image/svg+xml;utf8,AVATARlt;svg xmlns='http://www.w3.org/2000/svg' width='40' height='40'AVATARgt;AVATARlt;circle cx='20' cy='20' r='20' fill='%2399aacc'/AVATARgt;AVATARlt;/svgAVATARgt;"></div><div class="info">
+   <div class="info-row"><div class="title"><h3 class="fullName" id="an1">Família Modelo</h3></div><span class="time" id="at1">ontem</span></div>
+   <div class="subtitle"><p class="last-message" id="ap1"><span class="sender-name" id="as1">Fulana</span><span>: </span><span id="am1">a senha do wi-fi está na geladeira</span></p></div></div></div>
+ </div></div>
+ <div class="MiddleHeader"><div class="ChatInfo"><div class="info"><div class="title"><h3 class="fullName" id="ah">Família Modelo</h3></div><span class="status" id="ahs">5 membros</span></div></div></div>
+ <div class="MessageList"><div class="Message"><div class="message-content"><div class="message-title"><span class="sender-title" id="abn">Fulana Modelo</span></div>
+  <div class="text-content" id="abm">Placa do carro novo: BRA2E19</div></div></div></div>
+ <div class="form-control" contenteditable="true" id="acompose">Para Fulana Modelo: placa BRA2E19</div>
+</div></body></html>

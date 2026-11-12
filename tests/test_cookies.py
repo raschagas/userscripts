@@ -125,3 +125,59 @@ def test_nao_mexer_neste_site(make_ctx):
     page = page_for(make_ctx, "cookies-onetrust.html", "https://www.exemplo-noticias.com.br/")
     inject(page, S)
     assert page.evaluate("window.__menu.map(m => m.t)") == ["Não mexer nos cookies deste site"]
+
+
+# Plataformas acrescentadas na 1.1.0: [fixture, valor de window.accepted, regra de diagnóstico, seletor do botão aceitar].
+PLATAFORMAS = [
+    ("cookies-fundingchoices.html", "fc", "cmp:.fc-consent-root .fc-cta-consent", ".fc-cta-consent"),
+    ("cookies-consentmanager.html", "cmp", "shadow:#cmpbox .cmpboxbtnyes", None),
+    ("cookies-cookienotice.html", "cn", "cmp:#cookie-notice #cn-accept-cookie", "#cn-accept-cookie"),
+    ("cookies-klaro.html", "klaro", "cmp:.klaro .cookie-notice .cm-btn-success", ".cm-btn-success"),
+    ("cookies-borlabs.html", "borlabs", "cmp:#BorlabsCookieBox .brlbs-btn-accept-all", ".brlbs-btn-accept-all"),
+    ("cookies-cookiehub.html", "ch", "cmp:#ch2-dialog .ch2-allow-all-btn", ".ch2-allow-all-btn"),
+    ("cookies-axeptio.html", "axeptio", "shadow:#axeptio_btn_acceptAll", None),
+    ("cookies-moove.html", "moove", "cmp:#moove_gdpr_cookie_info_bar .moove-gdpr-infobar-allow-all", ".moove-gdpr-infobar-allow-all"),
+]
+
+
+@pytest.mark.parametrize("fixture,key,label,_sel", PLATAFORMAS)
+def test_plataforma_clica_so_o_aceitar(make_ctx, fixture, key, label, _sel):
+    page = page_for(make_ctx, fixture, "https://www.exemplo-plataforma.com.br/")
+    inject(page, S)
+    page.wait_for_timeout(300)
+    assert page.evaluate("window.clicked") == [key], "só o botão de aceitar, nunca recusar/fechar/ajustes"
+    assert page.evaluate("document.documentElement.dataset.usCookies") == label
+    assert page.errors == []
+
+
+@pytest.mark.parametrize("fixture,key,label,sel", [p for p in PLATAFORMAS if p[3]])
+def test_plataforma_sem_aceitar_nao_clica_nada(make_ctx, fixture, key, label, sel):
+    """Sem o botão de aceitar (só recusar, fechar, ajustes), o script não clica em nada."""
+    page = page_for(make_ctx, fixture, "https://www.exemplo-plataforma.com.br/")
+    page.evaluate("s => document.querySelectorAll(s).forEach(e => e.remove())", sel)
+    inject(page, S)
+    page.wait_for_timeout(1500)
+    assert page.evaluate("window.clicked") == []
+
+
+def test_shadow_oculto_nao_clica(make_ctx):
+    page = page_for(make_ctx, "cookies-axeptio.html", "https://www.exemplo-plataforma.com.br/")
+    page.evaluate("document.querySelector('#axeptio_overlay > div').shadowRoot.querySelector('#axeptio_btn_acceptAll').style.display = 'none'")
+    inject(page, S)
+    page.wait_for_timeout(1500)
+    assert page.evaluate("window.clicked") == []
+
+
+def test_sourcepoint_no_iframe_so_aceitar_tudo(make_ctx):
+    """Sourcepoint: mensagem em iframe; aceita (choice type 11), nunca assinar (9), rejeitar (13) ou o X."""
+    ctx = make_ctx()
+    ctx.add_init_script("localStorage.setItem('__gm:debug', 'true')")
+    serve(ctx, "https://www.exemplo-noticias.com.br/*", "frame-host.html")
+    serve(ctx, "https://widget.exemplo-terceiro.com/*", "cookies-sourcepoint.html")
+    page = ctx.new_page()
+    page.goto("https://www.exemplo-noticias.com.br/", wait_until="load")
+    frame = page.frame(url="https://widget.exemplo-terceiro.com/frame")
+    frame.add_script_tag(content=source(S))
+    page.wait_for_timeout(300)
+    assert frame.evaluate("window.clicked") == ["sp"]
+    assert frame.evaluate("document.documentElement.dataset.usCookies") == "cmp:button.message-button.sp_choice_type_11"

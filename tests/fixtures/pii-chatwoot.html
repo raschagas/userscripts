@@ -1,0 +1,29 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Chatwoot (fixture)</title>
+<!-- Estrutura do painel do Chatwoot (Vue: .conversations-list, .conversation--user, .conversation-header); dados fictícios. -->
+<style>*{box-sizing:border-box}body{margin:0;font:14px/1.4 system-ui,sans-serif}#app{display:flex;height:100vh}
+.conversations-list-wrap{width:360px;border-right:1px solid #ddd}.conversation{display:flex;gap:10px;padding:10px;border-bottom:1px solid #eee}
+.user-thumbnail{width:40px;height:40px;border-radius:50%}.conversation--details{flex:1;min-width:0}.conversation--user{margin:0;font-size:14px}
+.conversation--message{margin:0;color:#666;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.label{font-size:11px;color:#888}
+.conversation-details-wrap{flex:1;display:flex;flex-direction:column}.conversation-header{display:flex;gap:10px;padding:10px;border-bottom:1px solid #ddd}
+.user--name{margin:0;font-size:15px}.conversation-panel{list-style:none;flex:1;padding:10px 20px;margin:0}
+.conversation-panel li{margin:8px 0}.sender--name{font-size:12px;color:#555}.message-text__wrap{background:#f2f4f7;padding:6px 10px;border-radius:8px;display:inline-block}
+.ProseMirror{border:1px solid #aaa;padding:8px;margin:10px}.contact--panel{width:280px;border-left:1px solid #ddd;padding:12px}</style></head><body>
+<div id="app">
+<section class="conversations-list-wrap"><div class="conversations-list">
+ <div class="conversation" id="w1"><div class="user-thumbnail-box"><img class="user-thumbnail" id="wav" alt="" src="data:image/svg+xml;utf8,AVATARlt;svg xmlns='http://www.w3.org/2000/svg' width='40' height='40'AVATARgt;AVATARlt;circle cx='20' cy='20' r='20' fill='%2399aacc'/AVATARgt;AVATARlt;/svgAVATARgt;"></div><div class="conversation--details">
+  <span class="label">Canal WhatsApp</span><h4 class="conversation--user" id="wn1">Edivaldo Rodrigues</h4>
+  <p class="conversation--message" id="wp1">Preciso da segunda via do boleto, meu CPF é 123.456.789-09</p><span class="timestamp" id="wt1">3m</span></div></div>
+ <div class="conversation" id="w2"><div class="user-thumbnail-box"><img class="user-thumbnail" alt="" src="data:image/svg+xml;utf8,AVATARlt;svg xmlns='http://www.w3.org/2000/svg' width='40' height='40'AVATARgt;AVATARlt;circle cx='20' cy='20' r='20' fill='%2399aacc'/AVATARgt;AVATARlt;/svgAVATARgt;"></div><div class="conversation--details">
+  <span class="label">Canal WhatsApp</span><h4 class="conversation--user" id="wn2">+55 61 98765-4321</h4>
+  <p class="conversation--message" id="wp2">Bom dia, ainda estão atendendo?</p><span class="timestamp">1h</span></div></div>
+</div></section>
+<section class="conversation-details-wrap">
+ <div class="conversation-header"><img class="user-thumbnail" id="whav" alt="" src="data:image/svg+xml;utf8,AVATARlt;svg xmlns='http://www.w3.org/2000/svg' width='40' height='40'AVATARgt;AVATARlt;circle cx='20' cy='20' r='20' fill='%2399aacc'/AVATARgt;AVATARlt;/svgAVATARgt;"><div class="user--profile__meta"><h3 class="user--name" id="wh">Edivaldo Rodrigues</h3><span id="whs">Visto há 3 minutos</span></div></div>
+ <ul class="conversation-panel">
+  <li class="left"><div class="sender--name" id="wsn">Edivaldo Rodrigues</div><div class="message-text__wrap" id="wm">Meu telefone é (61) 3216-0000 e a matrícula 123.456-7</div></li>
+  <li class="right"><div class="sender--name" id="wsa">Atendente Exemplo</div><div class="message-text__wrap" id="wm2">Obrigado pelo retorno, vamos verificar.</div></li>
+ </ul>
+ <div class="reply-box"><div class="ProseMirror" contenteditable="true" id="wcompose">Olá Edivaldo Rodrigues, CPF 123.456.789-09</div></div>
+</section>
+<aside class="contact--panel"><h3 class="contact--name" id="wcn">Edivaldo Rodrigues</h3><div id="wcp">+55 61 98765-4321</div></aside>
+</div></body></html>
