@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Filtro de lojas — nota e vendas em cada anúncio
 // @namespace    raschagas/userscripts
-// @version      1.2.2
+// @version      1.3.0
 // @description  Marca cada anúncio com um círculo verde, vermelho ou cinza pela nota e pela quantidade de avaliações ou vendas, esmaece ou oculta os reprovados, some com patrocinados reprovados e corrige links de combos do AliExpress. Ajustes por site.
 // @match        https://*.aliexpress.com/*
 // @match        https://www.amazon.com.br/*
@@ -77,6 +77,22 @@
   }
   const RE_PARENS = /^\(\s*(\d+(?:[.,]\d+)*)\s*(k|mil)?\s*\+?\s*\)$/i;
   const SPONSORED = /(^|\n)\s*(Anúncio|Patrocinado|Patrocinados|Sponsored|Promovido|Publicidade)\b/;
+  // Primary card prices only. This deliberately ignores shipping, savings, installments,
+  // struck-through originals and unit prices; unclear cards fail open.
+  const MONEY = /^\s*(R\$|US\$|€|£)\s*([\d.,]+)\s*$/;
+  const currencyOf = s => /^R\$/.test(s) ? 'BRL' : /^US\$/.test(s) ? 'USD' : /^€/.test(s) ? 'EUR' : /^£/.test(s) ? 'GBP' : null;
+  function money(raw) {
+    const m = MONEY.exec(String(raw || '')); if (!m) return null;
+    const currency = currencyOf(m[1]); if (!currency) return null;
+    let n = m[2];
+    if (!/^(?:\d+|\d{1,3}(?:\.\d{3})+|\d{1,3}(?:,\d{3})+)(?:[.,]\d{1,2})?$/.test(n) && !/^\d+[.,]\d{1,2}$/.test(n)) return null;
+    if (n.includes(',') && n.includes('.')) n = n.lastIndexOf(',') > n.lastIndexOf('.') ? n.replace(/\./g, '').replace(',', '.') : n.replace(/,/g, '');
+    else if (n.includes(',')) n = /^\d{1,3},\d{3}(?:,\d{3})*$/.test(n) ? n.replace(/,/g, '') : n.replace(',', '.');
+    else if (n.includes('.')) n = /^\d{1,3}(?:\.\d{3})+$/.test(n) ? n.replace(/\./g, '') : n;
+    if (!/^\d+(?:\.\d{1,2})?$/.test(n)) return null;
+    const value = Math.round(Number(n) * 100); return Number.isSafeInteger(value) && value >= 0 ? { value, currency } : null;
+  }
+  const moneyIn = raw => { const s = String(raw || '').trim(); const m = /^(?:A partir de\s+|From\s+)?((?:R\$|US\$|€|£)\s*[\d.,]+)(?:\s*[-–]\s*((?:(?:R\$|US\$|€|£)\s*)?[\d.,]+))?$/i.exec(s); if (!m) return null; const first = money(m[1]); if (!first || !m[2]) return first; const mark = /^(R\$|US\$|€|£)/.exec(m[1])[1]; const last = money(/^(R\$|US\$|€|£)/.test(m[2]) ? m[2] : mark + m[2]); return last && last.currency === first.currency && last.value >= first.value ? first : null; };
 
   const qsa = (sel, root) => { try { return [...(root || document).querySelectorAll(sel)]; } catch (_) { return []; } };
   const linesOf = el => (el.innerText || el.textContent || '').split('\n').map(s => s.replace(NBSP, ' ').trim()).filter(Boolean);
@@ -101,7 +117,37 @@
     m = RE_SOLD.exec(txt); if (m) return { count: toInt(m[1] + (m[2] ? ' ' + m[2] : '')), countKind: 'sold' };
     return { count: null, countKind: null };
   }
-  const generic = el => { const L = linesOf(el); return Object.assign({ rating: genericRating(el, L) }, genericCount(el, L)); };
+  const PRICE_SELECTORS = { aliexpress: '[class*="priceMain_"],.AIC4-PI-price-text,.AIC-PI-priceDiscountMode,[class*="salePrice" i],[class*="minPrice" i]', amazon: '.a-price:not(.a-text-price) .a-offscreen,[class*="priceToPay" i] .a-offscreen', kabum: '[class*="finalPrice" i],[class*="priceCard" i] [class*="price" i]', mercadolivre: '.andes-money-amount,[class*="poly-price" i]', shopee: '[class*="price-item" i],[class*="price" i]:not([class*="original" i])', magalu: '[data-testid="price-value"],[data-testid*="price" i]:not([data-testid*="old" i])', americanas: '[data-testid*="price" i]:not([data-testid*="old" i])', casasbahia: '[data-testid*="price" i]:not([data-testid*="old" i])', temu: '[class*="salePrice" i],[class*="price" i]:not([class*="original" i])', shein: '[class*="salePrice" i],[class*="discountPrice" i]' };
+  function genericPrice(el, site) {
+    // Price-bearing elements come before text fallback: titles/aria labels and crossed-out
+    // previous prices are intentionally never considered prices.
+    const excluded = n => {
+      for (let x = n; x && x !== el; x = x.parentElement) {
+        if (x.matches('del,s,h1,h2,h3,h4,[class*="oldPrice" i],[class*="originalPrice" i],[class*="listPrice" i],.a-text-price,.line-through') || getComputedStyle(x).textDecorationLine.includes('line-through')) return true;
+        if (/parcel|installment|shipping|coupon|saving|old-price|original-price|unit-price/i.test(x.className || '')) return true;
+        const t = x.textContent || '';
+        if ((x === n || (x === n.parentElement && /^\s*\d+\s*x\s*(?:de)?\s*/i.test(t))) && /parcel|\d+\s*x\s*(?:de)?|frete|shipping|cupom|economiz|poupe|por unidade|\/\s*(?:un|pc|pç)/i.test(t)) return true;
+      }
+      return false;
+    };
+    const read = n => {
+      const fraction = n.querySelector('.andes-money-amount__fraction'), cents = n.querySelector('.andes-money-amount__cents');
+      if (fraction) { const symbol = n.querySelector('.andes-money-amount__currency-symbol')?.textContent || ''; return money(symbol + fraction.textContent + (cents ? ',' + cents.textContent : '')); }
+      return moneyIn(n.textContent);
+    };
+    for (const n of qsa(PRICE_SELECTORS[site] || '[itemprop="price"]', el)) { if (excluded(n)) continue; const p = read(n); if (p) return p; }
+    for (const n of qsa('*', el)) {
+      if (n.children.length || excluded(n)) continue;
+      const p = moneyIn(n.textContent); if (p) return p;
+      // KaBuM and other cards render the currency and amount as adjacent spans.
+      const next = n.nextElementSibling;
+      if (/^(R\$|US\$|€|£)$/.test(n.textContent.trim()) && next && !next.children.length && !excluded(next)) {
+        const split = money(n.textContent.trim() + next.textContent.trim()); if (split) return split;
+      }
+    }
+    return null;
+  }
+  const generic = el => { const L = linesOf(el); return Object.assign({ rating: genericRating(el, L) }, genericCount(el, L), { price: genericPrice(el) }); };
   const sponsoredText = el => SPONSORED.test(el.innerText || '');
   // Pai da primeira imagem; sem caixa (display:contents dá retângulo zerado), a própria imagem.
   const imgAnchor = c => {
@@ -147,12 +193,13 @@
       extract: c => {
         if (c.classList.contains('us-sf-load-card')) return {
           rating: c.dataset.rating === '' ? null : Number(c.dataset.rating),
-          count: c.dataset.count === '' ? null : Number(c.dataset.count), countKind: 'sold' };
+          count: c.dataset.count === '' ? null : Number(c.dataset.count), countKind: 'sold',
+          price: (() => { try { return c.dataset.price ? JSON.parse(c.dataset.price) : null; } catch (_) { return null; } })() };
         const L = linesOf(c);
         const r = bareRating(c, L);
         const m = RE_SOLD.exec(L.join('\n'));
         const g = r || m ? null : generic(c);
-        return g || { rating: r ? toRating(r[1]) : null, count: m ? toInt(m[1] + (m[2] ? ' ' + m[2] : '')) : null, countKind: m ? 'sold' : null };
+        return g || { rating: r ? toRating(r[1]) : null, count: m ? toInt(m[1] + (m[2] ? ' ' + m[2] : '')) : null, countKind: m ? 'sold' : null, price: genericPrice(c) };
       },
       anchor: imgAnchor,
       wrapper: c => c.classList.contains('us-sf-load-card') ? c.parentElement : (c.closest('[class*="card-out-wrapper"]') || c.closest('[class^="galleryItem--"], [class*=" galleryItem--"]') || c),
@@ -230,16 +277,25 @@
   ];
   const A = ADAPTERS.find(a => a.host.test(location.hostname));
   if (!A) return;
+  // Every adapter owns a price reader. Existing site adapters retain their focused
+  // rating/count extractors while this conservative reader fails open on uncertain cards.
+  for (const a of ADAPTERS) if (!a.price) a.price = c => genericPrice(c, a.id);
 
   // ---------- ajustes por site, na escala nativa ----------
   const KEY = 'site:' + A.id;
-  const DEF = { enabled: true, minRating: round1(A.scale * 0.9), minCount: 100, mode: 'dim', sponsoredOnlyIfPass: true, showInfo: true, rewriteCombos: true, autoLoad: true };
+  const DEF = { enabled: true, minRating: round1(A.scale * 0.9), minCount: 100, mode: 'dim', sponsoredOnlyIfPass: true, showInfo: true, rewriteCombos: true, autoLoad: true, prices: {} };
   const cfg = Object.assign({}, DEF, (() => { const v = get(KEY, null); try { return typeof v === 'string' ? JSON.parse(v) : (v || {}); } catch (_) { return {}; } })());
   const save = () => set(KEY, Object.assign({}, cfg));
 
-  // Veredito: eixo null não conta (null ≠ 0); sem nota e sem contagem = cinza.
+  const activePrice = currency => cfg.prices && cfg.prices[currency] || null;
+  const priceOf = c => { try { return (A.price ? A.price(c) : A.extract(c)?.price) || null; } catch (_) { return null; } };
+  const displayCurrency = () => { for (const c of A.cards().slice(0, 30)) { const p = priceOf(c); if (p?.currency) return p.currency; } return null; };
+  // Veredito: eixo null não conta (null ≠ 0); price can reject but never makes unknown quality pass.
   function verdict(d) {
     const r = d.rating, n = A.noCount ? null : d.count;
+    const range = d.price && activePrice(d.price.currency);
+    const priceFail = !!(range && ((range.min != null && d.price.value < range.min) || (range.max != null && d.price.value > range.max)));
+    if (priceFail) return 'fail';
     if (r == null && n == null) return 'unknown';
     if (r != null && r < cfg.minRating - 1e-9) return 'fail';
     if (n != null && n < cfg.minCount) return 'fail';
@@ -382,8 +438,8 @@
     for (const e of qsa('.us-sf-card,.us-sf-rel,.us-sf-dim,.us-sf-hide')) e.classList.remove('us-sf-card', 'us-sf-rel', 'us-sf-dim', 'us-sf-hide');
   }
 
-  const stats = { total: 0, pass: 0, fail: 0, unknown: 0, hidden: 0, dimmed: 0, spHidden: 0, ms: 0, scans: 0 };
-  let obs = null, timer = 0, ui = null, dirty = false, known = new Set(), seenCards = [], seenHref = '';
+  const stats = { total: 0, pass: 0, fail: 0, unknown: 0, hidden: 0, dimmed: 0, spHidden: 0, priceFail: 0, priceUnknown: 0, ms: 0, scans: 0 };
+  let obs = null, timer = 0, ui = null, dirty = false, known = new Set(), seenCards = [], seenPrices = [], seenHref = '';
 
   // Um "cartão" que reúne vários produtos (link de produto ou foto grande repetidos) não é cartão.
   const PRODUCT_IMG = 100; // px: foto de produto, não miniatura de cor ou ícone
@@ -496,6 +552,7 @@
       const sold = RE_SOLD.exec(card.trade?.tradeDesc || '');
       a.dataset.rating = rating == null || !Number.isFinite(rating) || rating < 0 || rating > 5 ? '' : String(rating);
       a.dataset.count = sold ? String(toInt(sold[1] + (sold[2] ? ' ' + sold[2] : ''))) : '';
+      const pp = money(price.textContent); a.dataset.price = pp ? JSON.stringify(pp) : '';
       score.textContent = rating == null ? '' : String(rating); sales.textContent = card.trade?.tradeDesc || '';
       if (rating != null) score.setAttribute('aria-label', `${rating} de 5 estrelas`);
       a.append(img, title, price, score, sales); w.append(a);
@@ -661,11 +718,11 @@
     if (obs) obs.disconnect();
     clearMarks();
     const raw = A.cards();
-    seenCards = raw; seenHref = location.href;
+    seenCards = raw; seenPrices = raw.map(c => { const p = priceOf(c); return p ? `${p.currency}:${p.value}` : ''; }); seenHref = location.href;
     let cards = raw.filter(validCard);
     if (cards.length < 2) cards = []; // um anúncio só (página de produto, seletor errado): não mexe
     stats.scans++;
-    Object.assign(stats, { total: cards.length, pass: 0, fail: 0, unknown: 0, hidden: 0, dimmed: 0, spHidden: 0 });
+    Object.assign(stats, { total: cards.length, pass: 0, fail: 0, unknown: 0, hidden: 0, dimmed: 0, spHidden: 0, priceFail: 0, priceUnknown: 0 });
     known = new Set();
     if (cards.length) injectCss();
     if (cards.length && cfg.enabled) {
@@ -675,7 +732,9 @@
       const reads = cards.map(c => {
         const w = A.wrapper(c) || c;
         let d; try { d = A.extract(c) || {}; } catch (_) { d = {}; }
-        d = { rating: d.rating == null || !isFinite(d.rating) ? null : d.rating, count: d.count == null || !isFinite(d.count) ? null : d.count };
+        const rawPrice = priceOf(c);
+        d = { rating: d.rating == null || !isFinite(d.rating) ? null : d.rating, count: d.count == null || !isFinite(d.count) ? null : d.count,
+          price: rawPrice && Number.isSafeInteger(rawPrice.value) && rawPrice.value >= 0 && /^[A-Z]{3}$/.test(rawPrice.currency || '') ? rawPrice : null };
         let sp = false; try { sp = !!A.sponsored(c, w); } catch (_) { /* sem selo */ }
         const a = A.anchor(c) || c, cr = c.getBoundingClientRect(), ar = a.getBoundingClientRect();
         const isStatic = getComputedStyle(c).position === 'static';
@@ -688,7 +747,10 @@
         reads[i].item = reads[i].c.classList.contains('us-sf-load-card') ? reads[i].w : e;
       });
       for (const r of reads) {
-        stats[r.v]++; known.add(r.c); known.add(r.w); known.add(r.item);
+        stats[r.v]++; const pr = r.d.price && activePrice(r.d.price.currency);
+        if (!r.d.price && Object.keys(cfg.prices || {}).length) stats.priceUnknown++;
+        if (pr && ((pr.min != null && r.d.price.value < pr.min) || (pr.max != null && r.d.price.value > pr.max))) stats.priceFail++;
+        known.add(r.c); known.add(r.w); known.add(r.item);
         const spDrop = r.sp && cfg.sponsoredOnlyIfPass && r.v !== 'pass';
         if (spDrop && canHide) { r.item.classList.add('us-sf-hide'); stats.spHidden++; continue; }
         if (r.v === 'fail' || spDrop) {
@@ -721,6 +783,7 @@
     const now = A.cards();
     if (now.length !== seenCards.length) return true;
     for (let i = 0; i < now.length; i++) if (now[i] !== seenCards[i]) return true;
+    for (let i = 0; i < now.length; i++) { const p = priceOf(now[i]); if ((p ? `${p.currency}:${p.value}` : '') !== seenPrices[i]) return true; }
     return false;
   }
   function tick() { timer = 0; if (dirty || changed()) scan(); }
@@ -730,17 +793,20 @@
   // Dentro de um cartão marcado, só conta entrar ou sair elemento com cartão, foto ou link, ou
   // texto com cara de nota ("4,8", "★"); o resto (contador "Termina em", preço) não provoca varredura.
   const RATING_TXT = /★|(^|[^\d.,])[0-9]{1,2}[.,][0-9](?![\d])/;
+  const RELEVANT_TXT = s => RATING_TXT.test(s || '') || /(?:R\$|US\$|€|£)\s*\d/.test(s || '') || /^\s*\d+[\d.,]*\s*$/.test(s || '');
   const relevantNode = n => {
-    if (n.nodeType === 3) return RATING_TXT.test(n.nodeValue || '');
+    if (n.nodeType === 3) return RELEVANT_TXT(n.nodeValue);
     if (n.nodeType !== 1 || (n.classList && n.classList.contains('us-sf-dot'))) return false;
-    return n.matches('img,picture,a[href]') || !!n.querySelector('img,picture,a[href]') || known.has(n) || RATING_TXT.test(n.textContent || '');
+    return n.matches('img,picture,a[href]') || !!n.querySelector('img,picture,a[href]') || known.has(n) || RELEVANT_TXT(n.textContent);
   };
-  const relevantMut = m => m.type === 'characterData' ? RATING_TXT.test(m.target.nodeValue || '')
+  const relevantMut = m => m.type === 'characterData' ? RELEVANT_TXT(m.target.nodeValue)
     : [...m.addedNodes].some(relevantNode) || [...m.removedNodes].some(relevantNode);
   function observe() {
     if (!document.body) return;
     if (!obs) obs = new MutationObserver(muts => {
-      if (!dirty) for (const m of muts) if (relevantMut(m) && inKnown(m.target)) { dirty = true; break; } // o site mexeu num cartão já marcado
+      // Product cards often split the currency and decimal digits across nodes. Any mutation
+      // inside a marked card is cheap to rescan after debouncing and avoids stale prices.
+      if (!dirty) for (const m of muts) if (inKnown(m.target) && relevantMut(m)) { dirty = true; break; }
       schedule();
     });
     obs.observe(document.body, { childList: true, subtree: true, characterData: true });
@@ -763,6 +829,7 @@ h2{margin:0;font:700 16px/1.3 var(--us-font);color:var(--us-text)}
 .lbl{display:flex;justify-content:space-between;align-items:baseline;margin:12px 0 0;gap:8px}
 .lbl output{font-weight:700;font-variant-numeric:tabular-nums}
 input[type=range]{width:100%;height:var(--us-target);margin:0;accent-color:var(--us-accent);background:transparent;cursor:pointer}
+.price{margin-top:12px;padding-top:10px;border-top:1px solid var(--us-border)}.price h3{font-size:14px;margin:0 0 5px}.price-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.price label{font-size:12px;color:var(--us-text-2)}.price input{display:block;width:100%;height:var(--us-target);margin-top:3px;border:1px solid var(--us-border);border-radius:var(--us-radius-s);padding:0 10px;background:var(--us-surface);color:var(--us-text);font-size:16px}.price-actions{display:flex;gap:8px;margin-top:8px}.price-actions button{min-height:var(--us-target);border:0;border-radius:var(--us-radius-s);padding:0 12px;background:var(--us-accent);color:#fff;font-weight:700;cursor:pointer}.price-actions button:last-child{background:var(--us-surface-2);color:var(--us-text)}.price-error{color:var(--us-fail);font-size:12px;margin:4px 0 0}.price-error:empty{display:none}
 .note{color:var(--us-text-2);font-size:12.5px;margin:10px 0 0}
 .row{display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:var(--us-target);border-top:1px solid var(--us-border)}
 .row:first-of-type{margin-top:8px}
@@ -780,11 +847,12 @@ input[type=range]{width:100%;height:var(--us-target);margin:0;accent-color:var(-
     const t = cfg.enabled
       ? `${stats.fail} reprovado${stats.fail === 1 ? '' : 's'}${stats.spHidden ? ` · ${stats.spHidden} patrocinado${stats.spHidden === 1 ? '' : 's'} oculto${stats.spHidden === 1 ? '' : 's'}` : ''}`
       : 'Filtro desligado';
+    if (ui.sync && displayCurrency() !== ui.priceCurrency) ui.sync();
     ui.pill.classList.toggle('off', !cfg.enabled);
     ui.txt.textContent = t;
     ui.pill.setAttribute('aria-label', `Filtro de lojas: ${t}. Abrir ajustes`);
-    ui.sub.textContent = `${stats.total} anúncio${stats.total === 1 ? '' : 's'} · ${stats.fail} reprovado${stats.fail === 1 ? '' : 's'} · ${stats.unknown} sem dados · ajustes valem só para este site`;
-    Object.assign(ui.host.dataset, { site: A.id, scans: stats.scans, total: stats.total, pass: stats.pass, fail: stats.fail, unknown: stats.unknown, hidden: stats.hidden, dimmed: stats.dimmed, spHidden: stats.spHidden, ms: stats.ms });
+    ui.sub.textContent = `${stats.total} anúncio${stats.total === 1 ? '' : 's'} · ${stats.fail} reprovado${stats.fail === 1 ? '' : 's'}${stats.priceFail ? ` (${stats.priceFail} por preço)` : ''}${stats.priceUnknown ? ` · ${stats.priceUnknown} sem preço` : ''} · ${stats.unknown} sem dados · ajustes valem só para este site`;
+    Object.assign(ui.host.dataset, { site: A.id, scans: stats.scans, total: stats.total, pass: stats.pass, fail: stats.fail, unknown: stats.unknown, hidden: stats.hidden, dimmed: stats.dimmed, spHidden: stats.spHidden, priceFail: stats.priceFail, priceUnknown: stats.priceUnknown, ms: stats.ms });
   }
   function buildUi() {
     const host = document.createElement('div'); host.id = 'us-shop-filter';
@@ -800,6 +868,7 @@ input[type=range]{width:100%;height:var(--us-target);margin:0;accent-color:var(-
   <input type="range" id="r" min="0" max="${A.scale}" step="0.1">
   ${A.noCount ? '<p class="note">Este site não mostra a quantidade de avaliações: o filtro usa só a nota.</p>'
     : '<div class="lbl"><label for="n">Avaliações ou vendidos (mín.)</label><output id="no"></output></div><input type="range" id="n" min="0" max="1000" step="10">'}
+  <section class="price" aria-labelledby="pt"><h3 id="pt">Preço <output id="pcurrency"></output></h3><div class="price-grid"><label>Mínimo<input id="pmin" inputmode="decimal" placeholder="Sem mínimo"></label><label>Máximo<input id="pmax" inputmode="decimal" placeholder="Sem máximo"></label></div><div class="price-actions"><button type="button" id="papply">Aplicar</button><button type="button" id="pclear">Limpar</button></div><p class="price-error" id="perr" role="alert"></p><p class="note">Usa o preço inicial anunciado; variantes podem custar mais.</p></section>
   ${sw('enabled', 'Filtro ligado')}
   ${sw('hide', 'Ocultar reprovados', 'desligado = esmaecer')}
   ${sw('sponsoredOnlyIfPass', 'Patrocinado só se aprovado', 'patrocinado reprovado ou sem nota some')}
@@ -810,18 +879,34 @@ input[type=range]{width:100%;height:var(--us-target);margin:0;accent-color:var(-
 </div>`;
     document.documentElement.appendChild(host);
     const $ = s => root.querySelector(s);
-    ui = { host, root, pill: $('.pill'), txt: $('.txt'), panel: $('.panel'), sub: $('.sub'), r: $('#r'), ro: $('#ro'), n: $('#n'), no: $('#no') };
+    ui = { host, root, pill: $('.pill'), txt: $('.txt'), panel: $('.panel'), sub: $('.sub'), r: $('#r'), ro: $('#ro'), n: $('#n'), no: $('#no'), pmin: $('#pmin'), pmax: $('#pmax'), papply: $('#papply'), pclear: $('#pclear'), perr: $('#perr'), pcurrency: $('#pcurrency') };
     const val = k => k === 'hide' ? cfg.mode === 'hide' : !!cfg[k];
     const sync = () => {
       ui.r.value = cfg.minRating; ui.ro.textContent = `${cfg.minRating.toFixed(1).replace('.', ',')} / ${A.scale}`;
       ui.r.setAttribute('aria-valuetext', ui.ro.textContent);
       if (ui.n) { ui.n.value = cfg.minCount; ui.no.textContent = cfg.minCount.toLocaleString('pt-BR'); }
+      const c = displayCurrency(); const p = c ? (cfg.prices[c] || {}) : {};
+      if (ui.priceCurrency !== c) ui.priceDraft = false;
+      ui.priceCurrency = c;
+      ui.pcurrency.textContent = c || 'não reconhecido';
+      ui.papply.disabled = !c; ui.pclear.disabled = !c;
+      ui.papply.title = !c ? 'Preço não reconhecido nesta página' : '';
+      if (!ui.priceDraft) { ui.pmin.value = p.min == null ? '' : (p.min / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); ui.pmax.value = p.max == null ? '' : (p.max / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
       for (const b of root.querySelectorAll('.sw')) b.setAttribute('aria-checked', String(val(b.dataset.k)));
     };
     ui.sync = sync; sync();
     const apply = () => { save(); sync(); if (timer) { clearTimeout(timer); timer = 0; } scan(); };
     ui.r.addEventListener('input', () => { cfg.minRating = round1(+ui.r.value); apply(); });
     if (ui.n) ui.n.addEventListener('input', () => { cfg.minCount = Math.round(+ui.n.value); apply(); });
+    const parseBound = v => { const marks = { BRL: 'R$', USD: 'US$', EUR: '€', GBP: '£' }; const p = money((marks[displayCurrency()] || 'R$') + ' ' + String(v || '').trim()); return p ? p.value : null; };
+    const applyPrice = () => {
+      if (displayCurrency() !== ui.priceCurrency) { sync(); ui.perr.textContent = 'A moeda mudou. Confira os limites antes de aplicar.'; return; }
+      const min = ui.pmin.value.trim() ? parseBound(ui.pmin.value) : null, max = ui.pmax.value.trim() ? parseBound(ui.pmax.value) : null;
+      if ((ui.pmin.value.trim() && min == null) || (ui.pmax.value.trim() && max == null) || (min != null && max != null && min > max)) { ui.perr.textContent = 'Informe valores positivos válidos, com mínimo menor ou igual ao máximo.'; return; }
+      ui.perr.textContent = ''; const currency = displayCurrency(); if (!currency) { ui.perr.textContent = 'Preço não reconhecido nesta página.'; return; } cfg.prices = cfg.prices || {}; if (min == null && max == null) delete cfg.prices[currency]; else cfg.prices[currency] = { min, max }; ui.priceDraft = false; apply(); };
+    ui.papply.addEventListener('click', applyPrice); ui.pclear.addEventListener('click', () => { const c = displayCurrency(); if (c !== ui.priceCurrency) { sync(); return; } if (c) delete cfg.prices[c]; ui.priceDraft = false; ui.perr.textContent = ''; apply(); });
+    for (const input of [ui.pmin, ui.pmax]) input.addEventListener('input', () => { ui.priceDraft = true; });
+    for (const input of [ui.pmin, ui.pmax]) input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); applyPrice(); } });
     for (const b of root.querySelectorAll('.sw')) b.addEventListener('click', () => {
       const k = b.dataset.k;
       if (k === 'hide') cfg.mode = cfg.mode === 'hide' ? 'dim' : 'hide'; else cfg[k] = !cfg[k];

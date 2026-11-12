@@ -87,6 +87,15 @@ A versão 1.2.1 também reconhece os cartões de SuperOfertas (`Deals-HomePage`)
 a continuação por páginas numeradas permanece exclusiva das buscas. A versão 1.2.2 corrige
 também a grade principal de Combos no desktop, cujos cartões são elementos clicáveis sem links.
 
+## Preço
+
+O painel também aceita preço mínimo e máximo por loja e moeda. Os limites só entram em vigor ao
+clicar em **Aplicar** (ou pressionar Enter), e **Limpar** remove o limite daquela moeda. O filtro
+usa o preço inicial anunciado; frete, parcelas, descontos, cupons, preço por unidade e preço
+riscado ficam de fora. Um cartão sem preço reconhecível não é reprovado por preço.
+No momento o leitor reconhece BRL, USD, EUR e GBP; outras moedas ficam sem filtro até que tenham
+um formato verificado.
+
 Menu: **Abrir ajustes do filtro** · **Desligar/ligar neste site**.
 
 | Site | Situação |

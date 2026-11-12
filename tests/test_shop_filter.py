@@ -368,7 +368,7 @@ def test_aliexpress_links_que_nao_sao_item_nem_combo_ficam_intactos(make_ctx):
     page.evaluate("""l => { for (const [id, h] of Object.entries(l)) { const a = document.createElement('a'); a.id = id; a.href = h;
       a.textContent = id; document.body.append(a); } }""", LINKS_INTACTOS)
     inject(page, S)
-    page.wait_for_timeout(500)
+    page.wait_for_timeout(900)
     got = page.evaluate("l => Object.fromEntries(Object.keys(l).map(id => [id, document.getElementById(id).getAttribute('href')]))", LINKS_INTACTOS)
     assert got == LINKS_INTACTOS
     assert page.evaluate("document.querySelectorAll('[data-us-sf-href-original]').length") == 2, "só os dois combos mudaram"
@@ -658,3 +658,144 @@ def test_loader_single_hidden_card_does_not_hide_controls(make_ctx):
     assert page.locator('.us-sf-load-wrap.us-sf-hide').count() == 1
     assert page.locator('.us-sf-more').is_visible()
     assert page.get_by_role('button', name='Tentar novamente').is_visible()
+
+
+def test_price_range_apply_clear_invalid_and_dynamic(make_ctx):
+    ctx = make_ctx()
+    body = '''<style>.grid{display:flex}.card{width:180px}.card img{width:140px;height:140px}</style><div class="grid">
+    <a class="cards--card--x card" id="cheap" href="/item/1005001111111111.html"><img><div>4.8</div><div>1.000 vendido(s)</div><div data-price>R$ 19,90</div></a>
+    <a class="cards--card--x card" id="good" href="/item/1005002222222222.html"><img><div>4.8</div><div>1.000 vendido(s)</div><div>A partir de R$ 49,90</div><div>R$ 99,90</div></a>
+    <a class="cards--card--x card" id="expensive" href="/item/1005003333333333.html"><img><div>4.8</div><div>1.000 vendido(s)</div><div>R$ 199,90</div><div>10x de R$ 19,99</div></a>
+    <a class="cards--card--x card" id="unknown" href="/item/1005004444444444.html"><img><div>4.8</div><div>1.000 vendido(s)</div><div>Frete R$ 9,90</div></a></div>'''
+    ctx.route('https://pt.aliexpress.com/**', lambda r: r.fulfill(body=body, content_type='text/html'))
+    page = open_page(ctx, ALI)
+    inject(page, S)
+    page.locator('#us-shop-filter .pill').click()
+    root = "document.getElementById('us-shop-filter').shadowRoot"
+    page.evaluate(f"{root}.querySelector('#pmin').value='20,00'; {root}.querySelector('#pmax').value='100'; {root}.querySelector('#papply').click()")
+    assert page.locator('#cheap .us-sf-dot').get_attribute('data-v') == 'fail'
+    assert page.locator('#good .us-sf-dot').get_attribute('data-v') == 'pass'
+    assert page.locator('#expensive .us-sf-dot').get_attribute('data-v') == 'fail'
+    assert page.locator('#unknown .us-sf-dot').get_attribute('data-v') == 'pass'
+    assert page.locator('#us-shop-filter').get_attribute('data-price-fail') == '2'
+    page.evaluate(f"{root}.querySelector('#pmin').value='200'; {root}.querySelector('#pmax').value='20'; {root}.querySelector('#papply').click()")
+    assert 'mínimo' in page.evaluate(f"{root}.querySelector('#perr').textContent")
+    assert page.locator('#cheap .us-sf-dot').get_attribute('data-v') == 'fail'
+    page.evaluate(f"{root}.querySelector('#pclear').click()")
+    assert page.locator('#cheap .us-sf-dot').get_attribute('data-v') == 'pass'
+    page.evaluate(f"{root}.querySelector('#pmin').value=''; {root}.querySelector('#pmax').value='100'; {root}.querySelector('#papply').click()")
+    assert page.locator('#cheap .us-sf-dot').get_attribute('data-v') == 'pass'
+    page.evaluate("document.querySelector('#cheap [data-price]').textContent='R$ 500,00'")
+    page.wait_for_timeout(1100)
+    assert page.locator('#cheap .us-sf-dot').get_attribute('data-v') == 'fail'
+    assert page.errors == []
+
+
+@pytest.mark.parametrize('url,card', [
+    ('https://pt.aliexpress.com/w/x.html', '<a class="cards--card--x" href="/item/1005001111111111.html"><span class="priceMain_hash"><span>R$</span><span>99,90</span></span></a>'),
+    ('https://www.amazon.com.br/s?k=x', '<div data-component-type="s-search-result"><a href="/dp/B000000001"><span class="a-price"><span class="a-offscreen">R$ 99,90</span></span></a></div>'),
+    ('https://www.kabum.com.br/busca/x', '<a class="group" href="/produto/123456"><span class="oldPrice">R$199,90</span><div><span>R$</span><span>99,90</span><span>-50%</span></div></a>'),
+    ('https://shopee.com.br/search?x', '<li class="shopee-search-item-result__item"><a href="/x-i.1.2"><span class="price-item">R$ 99,90</span></a></li>'),
+    ('https://www.mercadolivre.com.br/x', '<li class="ui-search-layout__item"><a href="/MLB123456"><span class="andes-money-amount">R$ 99,90</span></a></li>'),
+    ('https://www.magazineluiza.com.br/x', '<div data-testid="product-card-container"><a href="/p/abcdef/"><span data-testid="price-value">R$ 99,90</span></a></div>'),
+    ('https://www.americanas.com.br/x', '<div data-testid="product-card"><a href="/produto/123456"><span data-testid="price-current">R$ 99,90</span></a></div>'),
+    ('https://www.casasbahia.com.br/x', '<div data-testid="product-card"><a href="/123456/p"><span data-testid="price-current">R$ 99,90</span></a></div>'),
+    ('https://www.temu.com/x-g-123456.html', '<div data-tooltip="goods"><a href="/x-g-123456.html"><span class="salePrice">R$ 99,90</span></a></div>'),
+    ('https://www.shein.com/x-p-123456.html', '<section class="product-card"><a href="/x-p-123456.html"><span class="salePrice">R$ 99,90</span></a></section>'),
+])
+def test_price_reader_each_site_uses_primary_price(make_ctx, url, card):
+    ctx = make_ctx()
+    body = '<style>img{width:120px;height:120px}</style>' + card.replace('</a>', '<img></a>') + card.replace('99,90', '19,90').replace('</a>', '<img></a>')
+    ctx.route('https://**/*', lambda r: r.fulfill(body=body, content_type='text/html'))
+    page = open_page(ctx, url)
+    inject(page, S)
+    page.locator('#us-shop-filter .pill').click()
+    root = "document.getElementById('us-shop-filter').shadowRoot"
+    page.evaluate(f"{root}.querySelector('#pmax').value='50'; {root}.querySelector('#papply').click()")
+    assert page.locator('#us-shop-filter').get_attribute('data-price-fail') == '1'
+    assert not page.errors
+
+
+def test_price_currency_isolated_and_usd_input(make_ctx):
+    ctx = make_ctx()
+    ctx.add_init_script("localStorage.setItem('__gm:site:aliexpress', JSON.stringify({prices:{BRL:{max:1000}}}))")
+    body = '''<style>img{width:120px;height:120px}</style>
+    <a class="cards--card--x" href="/item/1005001111111111.html"><img><span class="salePrice">US$ 99.90</span></a>
+    <a class="cards--card--x" href="/item/1005002222222222.html"><img><span class="salePrice">US$ 19.90</span></a>'''
+    ctx.route('https://pt.aliexpress.com/**', lambda r: r.fulfill(body=body, content_type='text/html'))
+    page = open_page(ctx, ALI)
+    inject(page, S); page.locator('#us-shop-filter .pill').click()
+    root = "document.getElementById('us-shop-filter').shadowRoot"
+    assert page.evaluate(f"{root}.querySelector('#pcurrency').textContent") == 'USD'
+    assert page.locator('#us-shop-filter').get_attribute('data-price-fail') == '0'
+    page.evaluate(f"{root}.querySelector('#pmax').value='50'; {root}.querySelector('#papply').click()")
+    assert page.locator('#us-shop-filter').get_attribute('data-price-fail') == '1'
+    assert page.evaluate("JSON.parse(localStorage.getItem('__gm:site:aliexpress')).prices.USD.max") == 5000
+    page.evaluate(f"{root}.querySelector('#pclear').click()")
+    assert page.evaluate("JSON.parse(localStorage.getItem('__gm:site:aliexpress')).prices.BRL.max") == 1000
+    assert page.errors == []
+
+
+def test_price_ignores_original_installments_titles_and_malformed_amounts(make_ctx):
+    ctx = make_ctx()
+    body = '''<style>img{width:120px;height:120px}</style>
+    <a class="cards--card--x" id="ok" href="/item/1005001111111111.html"><img><span class="salePrice">R$ 50,00</span></a>
+    <a class="cards--card--x" id="old" href="/item/1005002222222222.html"><img><del class="oldPrice">R$ 999,00</del><span>10x de R$ 9,90</span></a>
+    <a class="cards--card--x" id="title" href="/item/1005003333333333.html"><img><h3>Gift card R$100</h3></a>
+    <a class="cards--card--x" id="bad" href="/item/1005004444444444.html"><img><span class="salePrice">R$ 1.2.3,45</span></a>'''
+    ctx.route('https://pt.aliexpress.com/**', lambda r: r.fulfill(body=body, content_type='text/html'))
+    page = open_page(ctx, ALI); inject(page, S); page.locator('#us-shop-filter .pill').click()
+    root = "document.getElementById('us-shop-filter').shadowRoot"
+    page.evaluate(f"{root}.querySelector('#pmax').value='40'; {root}.querySelector('#papply').click()")
+    assert page.locator('#ok .us-sf-dot').get_attribute('data-v') == 'fail'
+    assert page.locator('#old .us-sf-dot').get_attribute('data-v') == 'unknown'
+    assert page.locator('#title .us-sf-dot').get_attribute('data-v') == 'unknown'
+    assert page.locator('#bad .us-sf-dot').get_attribute('data-v') == 'unknown'
+    assert page.locator('#us-shop-filter').get_attribute('data-price-unknown') == '3'
+
+
+def test_price_range_split_fraction_and_css_original(make_ctx):
+    ctx = make_ctx()
+    ctx.add_init_script("localStorage.setItem('__gm:site:mercadolivre',JSON.stringify({prices:{BRL:{max:5000}}}))")
+    cards = [
+        '<span style="text-decoration:line-through">R$999</span><span class="andes-money-amount">R$20</span>',
+        '<span class="andes-money-amount"><span class="andes-money-amount__currency-symbol">R$</span><span class="andes-money-amount__fraction">199</span><span class="andes-money-amount__cents">90</span></span>',
+        '<span class="andes-money-amount">R$20–R$80</span>',
+        '<div class="installments">10x de <span>R$99</span></div>',
+    ]
+    body = '<style>img{width:120px;height:120px}</style>' + ''.join(f'<li class="ui-search-layout__item" id="c{i}"><img>{c}</li>' for i,c in enumerate(cards))
+    ctx.route('https://www.mercadolivre.com.br/**',lambda r:r.fulfill(body=body,content_type='text/html; charset=utf-8'))
+    page=open_page(ctx,'https://www.mercadolivre.com.br/x');inject(page,S)
+    assert page.locator('#us-shop-filter').get_attribute('data-price-fail') == '1'
+    assert page.locator('#c1 .us-sf-dot').get_attribute('data-v') == 'fail'
+    assert page.locator('#c2 .us-sf-dot').get_attribute('data-v') == 'unknown'
+    assert page.locator('#us-shop-filter').get_attribute('data-price-unknown') == '1'
+
+
+def test_price_loader_rejects_generated_card_and_clear_restores(make_ctx):
+    ctx=make_ctx()
+    ctx.add_init_script("localStorage.setItem('__gm:site:aliexpress',JSON.stringify({mode:'hide',prices:{BRL:{max:500}}}))")
+    body=_ali_html(_ali_payload(1,[_ali_item(1),_ali_item(2),_ali_item(3)],total=3))
+    ctx.route('https://pt.aliexpress.com/**',lambda r:r.fulfill(body=body,content_type='text/html; charset=utf-8'))
+    page=open_page(ctx,ALI);inject(page,S)
+    page.wait_for_timeout(600)
+    card=page.locator('.us-sf-load-card')
+    assert card.count()==1
+    assert not card.is_visible()
+    assert page.locator('#us-shop-filter').get_attribute('data-price-fail') == '1'
+    page.evaluate("document.getElementById('us-shop-filter').shadowRoot.querySelector('#pclear').click()")
+    assert card.is_visible()
+
+
+def test_price_draft_cannot_transfer_to_changed_currency(make_ctx):
+    ctx=make_ctx()
+    body='<style>img{width:120px;height:120px}</style>'+''.join(f'<a class="cards--card--x" href="/item/100500000000000{i}.html"><img><span class="salePrice">R$ 90</span></a>' for i in (1,2))
+    ctx.route('https://pt.aliexpress.com/**',lambda r:r.fulfill(body=body,content_type='text/html; charset=utf-8'))
+    page=open_page(ctx,ALI);inject(page,S)
+    root="document.getElementById('us-shop-filter').shadowRoot"
+    page.evaluate(f"{root}.querySelector('#pmax').value='50';{root}.querySelector('#pmax').dispatchEvent(new Event('input'))")
+    page.evaluate("document.querySelectorAll('.salePrice').forEach(e=>e.textContent='US$ 90')")
+    page.evaluate(f"{root}.querySelector('#papply').click()")
+    assert page.evaluate("JSON.parse(localStorage.getItem('__gm:site:aliexpress')||'{}').prices?.USD||null") is None
+    assert page.evaluate(f"{root}.querySelector('#pcurrency').textContent")=='USD'
+    assert page.evaluate(f"{root}.querySelector('#pmax').value")==''
