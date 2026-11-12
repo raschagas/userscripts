@@ -16,9 +16,9 @@ def meta_of(name):
     return metadata((SRC / name).read_text(encoding="utf-8"))
 
 
-def test_quatro_scripts():
+def test_catalogo_scripts():
     assert SCRIPTS == ["cookies-aceitar.user.js", "dados-pessoais.user.js",
-                       "georritmo-links.user.js", "shop-filter.user.js"]
+                       "georritmo-links.user.js", "makerworld-filter.user.js", "shop-filter.user.js"]
 
 
 @pytest.mark.parametrize("name", SCRIPTS)

@@ -12,6 +12,7 @@ chegam sozinhas: o gerenciador compara `@version` com o `@updateURL`.
 | Script | O que faz | Instalar |
 |---|---|---|
 | Filtro de lojas | nota e vendas em cada anúncio; esmaece/oculta reprovados | [shop-filter.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/shop-filter.user.js) |
+| MakerWorld | modelos/criadores ocultos, filtros e carregamento nativo assistido (experimental) | [makerworld-filter.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/makerworld-filter.user.js) |
 | Dados pessoais | borra dados pessoais na tela (desligado por padrão) | [dados-pessoais.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/dados-pessoais.user.js) |
 | georritmo-links (links do homelab) | chip com Jellyfin, Seerr, Mealie e comparação de voos | [georritmo-links.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/georritmo-links.user.js) |
 | Cookies | aceita e fecha avisos de cookies/LGPD | [cookies-aceitar.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/cookies-aceitar.user.js) |
@@ -178,3 +179,36 @@ existe para os testes; o `@match` nunca injeta nesse host.
 
 `docs/screenshots/`: páginas reais em PC (1366×768) e celular (412×915) e fixtures com dados
 fictícios (borrão, escala 0–10, painel escuro).
+
+## MakerWorld (`makerworld-filter.user.js`)
+
+**Experimental, publicado por solicitação do dono sem sessão no site real.** Validado em fixtures
+Playwright, não em páginas reais: o acesso automatizado retornou Cloudflare 403. Nenhuma instalação
+no navegador do dono foi feita. Ações ficam no menu “Ocultar” do cartão; ajustes ficam na pílula,
+com painel no PC e gaveta no celular. Cores, véu e alvos seguem o filtro de lojas.
+
+- Ocultar modelo ou criador persiste no gerenciador por dispositivo; desfazer último ocultamento
+  e restaurar por nome/ID ficam no painel. Criador sem ID numérico reconhecível não ganha ação.
+- Palavras no título: uma por linha, trechos literais, sem distinguir maiúsculas ou acentos.
+  Curtidas/downloads mínimos: 0 por padrão. Apenas métricas explicitamente rotuladas são lidas;
+  números sem rótulo ficam desconhecidos, nunca viram zero. Não é filtro de nota de impressão.
+- Reprovados recebem véu por padrão; “Ocultar reprovados” remove-os da grade. Dados ausentes
+  permanecem visíveis. Configurações inválidas voltam aos padrões seguros.
+- Carregamento assistido começa ligado: aciona apenas um botão nativo inequívoco “Load more”,
+  “Show more models”, “Carregar mais” ou “Mostrar mais modelos” dentro de `main`, perto da
+  viewport. Aguarda modelos novos, pausa após três lotes consecutivos sem resultado visível ou
+  após 12 segundos sem progresso. “Continuar” permite uma nova tentativa. Não faz chamadas de API
+  nem navega páginas numeradas. **Rolagem infinita que o site já executa permanece nativa**;
+  a pausa e o toggle controlam apenas os cliques do script, não requisições iniciadas pelo site.
+- Home, busca, categorias, criadores e coleções usam o mesmo reconhecedor de cartões.
+  `.js-design-card` e artigos semânticos com imagem e um único ID de modelo são candidatos;
+  layouts desconhecidos ficam intactos. Esses tipos de página não foram verificados ao vivo.
+- Desligar remove observadores, temporizadores e marcações. Para religar, use o menu Violentmonkey.
+
+O seletor `.js-design-card` e o caminho de título foram conferidos como pistas no
+[código público MakerWorld Enhancements](https://github.com/JMcrafter26/userscripts/blob/main/makerworld-enhancements/makerworld-enhancements.user.js);
+não foi incorporado código desse projeto. Os testes sintéticos cobrem comportamento, não
+confirmam compatibilidade atual do DOM. Imagens `makerworld-fixture-*` usam dados fictícios.
+
+Para recuperar a página: desligue o script no menu ou no gerenciador. Os ajustes ficam preservados.
+A primeira versão não substitui nenhum script existente.
