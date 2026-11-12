@@ -10,15 +10,27 @@ from matchpattern import _match_one, metadata, runs_on
 
 SCRIPTS = sorted(p.name for p in SRC.glob("*.user.js"))
 RAW = "https://raw.githubusercontent.com/raschagas/userscripts/main/src/{}"
+VERSOES = {
+    "makerworld-filter.user.js": "1.0.0",
+    "youtube-continuar.user.js": "1.0.0",
+    "reddit-clean.user.js": "1.0.0",
+    "google-clean.user.js": "1.0.0",
+    "amazon-links.user.js": "1.0.0",
+
+    "cookies-aceitar.user.js": "1.1.0",
+    "dados-pessoais.user.js": "2.0.0",
+    "georritmo-links.user.js": "1.0.0",
+    "shop-filter.user.js": "1.2.0",
+    "unbloat.user.js": "1.0.0",
+}
 
 
 def meta_of(name):
     return metadata((SRC / name).read_text(encoding="utf-8"))
 
 
-def test_catalogo_scripts():
-    assert SCRIPTS == ["cookies-aceitar.user.js", "dados-pessoais.user.js",
-                       "georritmo-links.user.js", "makerworld-filter.user.js", "shop-filter.user.js"]
+def test_scripts_publicados():
+    assert SCRIPTS == sorted(VERSOES)
 
 
 @pytest.mark.parametrize("name", SCRIPTS)
@@ -36,13 +48,13 @@ def test_cabecalho(name):
     for k, v in m:
         d.setdefault(k, []).append(v)
     assert d["namespace"] == ["raschagas/userscripts"]
-    assert d["version"] == ["1.0.0"]
+    assert d["version"] == [VERSOES[name]]
     assert d["downloadURL"] == [RAW.format(name)]
     assert d["updateURL"] == [RAW.format(name)]
     assert d["name"] and d["description"]
     assert "require" not in d, "sem @require remoto"
-    assert set(d["grant"]) <= {"GM_getValue", "GM_setValue", "GM_registerMenuCommand"}, d["grant"]
-    assert "connect" not in d, "nenhum script faz rede"
+    assert set(d["grant"]) <= {"none", "GM_getValue", "GM_setValue", "GM_registerMenuCommand"}, d["grant"]
+    assert "connect" not in d, "sem privilégios de rede entre origens"
     for k, v in m:  # comentário no fim da linha vira parte do valor
         assert "//" not in v or k in ("downloadURL", "updateURL", "match", "exclude", "namespace"), (k, v)
         if k in ("match", "exclude"):
@@ -54,7 +66,13 @@ def test_cabecalho(name):
 def test_sem_rede_no_codigo():
     for name in SCRIPTS:
         code = (SRC / name).read_text(encoding="utf-8")
-        assert not re.search(r"\b(fetch|XMLHttpRequest|GM_xmlhttpRequest|sendBeacon|WebSocket)\s*\(", code), name
+        calls = re.findall(r"\b(fetch|XMLHttpRequest|GM_xmlhttpRequest|sendBeacon|WebSocket)\s*\(", code)
+        if name == "shop-filter.user.js":
+            assert calls == ["fetch"], calls
+            assert re.search(r"credentials\s*:\s*'same-origin'", code)
+            assert "redirect: 'error'" in code
+        else:
+            assert not calls, name
 
 
 DP = "dados-pessoais.user.js"
@@ -68,6 +86,8 @@ DP = "dados-pessoais.user.js"
     "https://outlook.office365.com/mail/",
     "https://web.whatsapp.com/",
     "https://web.telegram.org/a/",
+    "https://web.telegram.org/k/",
+    "https://app.chatwoot.com/app/accounts/1/conversations/2",
     "https://teams.microsoft.com/v2/",
     "https://teams.cloud.microsoft/",
 ])
@@ -81,6 +101,8 @@ def test_dados_pessoais_casa(url):
     "https://evil.com/?u=https://mail.google.com/",
     "https://mail.google.com.evil.com/",
     "https://outlook.office.com.evil.com/",
+    "https://app.chatwoot.com.evil.com/",
+    "https://chat.exemplo.com.br/app/accounts/1/conversations/2",
     "http://mail.google.com/",
     "https://intranet.example/",
     "http://192.0.2.15/",
@@ -94,7 +116,7 @@ def test_dados_pessoais_so_sites_genericos():
     hosts = {v.split("://", 1)[1].split("/", 1)[0] for k, v in meta_of(DP) if k == "match"}
     assert hosts == {"mail.google.com", "contacts.google.com", "outlook.live.com", "outlook.office.com",
                      "outlook.office365.com", "web.whatsapp.com", "web.telegram.org", "teams.microsoft.com",
-                     "teams.cloud.microsoft"}, hosts
+                     "teams.cloud.microsoft", "app.chatwoot.com"}, hosts
 
 
 @pytest.mark.parametrize("url,expected", [
@@ -153,3 +175,43 @@ def test_cookies_nunca_em_login_gov_e_sistemas_de_trabalho(url):
 def test_cookies_excludes():
     ex = [v for k, v in meta_of("cookies-aceitar.user.js") if k == "exclude"]
     assert ex == ["*://sso.acesso.gov.br/*", "*://*.camara.leg.br/*", "*://camara.leg.br/*", "*://*.camara.gov.br/*"]
+
+
+UB = "unbloat.user.js"
+
+
+@pytest.mark.parametrize("url,expected", [
+    ("https://www.youtube.com/", True),
+    ("https://www.youtube.com/watch?v=x", True),
+    ("https://m.youtube.com/results?search_query=x", True),
+    ("https://youtube.com/shorts/x", True),
+    ("https://pt.aliexpress.com/w/wholesale-x.html", True),
+    ("https://m.aliexpress.com/w/wholesale-x.html", True),
+    ("https://www.amazon.com.br/s?k=x", True),
+    ("https://lista.mercadolivre.com.br/x", True),
+    ("https://www.mercadolivre.com.br/", True),
+    ("https://www.amazon.com/s?k=x", False),
+    ("https://www.youtube.com.evil.com/", False),
+    ("https://evil.com/?u=https://www.youtube.com/", False),
+    ("https://www.google.com/search?q=youtube", False),
+    ("https://www.camara.leg.br/", False),
+    ("https://camara.leg.br/", False),
+    ("https://x.camara.gov.br/", False),
+])
+def test_unbloat_escopo(url, expected):
+    assert runs_on(meta_of(UB), url) is expected, url
+
+
+def test_unbloat_excludes_camara_e_sem_frames():
+    m = meta_of(UB)
+    assert [v for k, v in m if k == "exclude"] == ["*://camara.leg.br/*", "*://*.camara.leg.br/*",
+                                                   "*://camara.gov.br/*", "*://*.camara.gov.br/*"]
+    assert any(k == "noframes" for k, _ in m)
+
+
+def test_unbloat_so_oculta():
+    """Só CSS de ocultar: nada de click(), submit, eventos sintéticos nem escrita em campo."""
+    code = (SRC / UB).read_text(encoding="utf-8")
+    assert not re.search(r"\.(click|submit|requestSubmit|dispatchEvent)\s*\(", code)
+    assert not re.search(r"\.value\s*=[^=]", code)
+    assert "display:none!important" in code

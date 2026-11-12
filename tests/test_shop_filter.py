@@ -1,4 +1,6 @@
 """shop-filter em fixtures servidas nos hosts reais (adaptador escolhido pelo host)."""
+import json
+
 import pytest
 
 from conftest import inject, open_page, serve
@@ -127,7 +129,7 @@ def test_sem_cartoes_nao_faz_nada(make_ctx):
     page = open_page(ctx, "https://www.amazon.com.br/dp/B000")
     html = page.evaluate("document.documentElement.outerHTML")
     inject(page, S)
-    page.wait_for_timeout(500)
+    page.wait_for_timeout(900)
     assert page.evaluate("!!document.getElementById('us-shop-filter') || !!document.getElementById('us-sf-style')") is False
     after = page.evaluate("document.documentElement.outerHTML")
     assert after.count("<script") == html.count("<script") + 1  # só a própria tag injetada pelo teste
@@ -184,6 +186,145 @@ def test_aliexpress_celular_gaveta(make_ctx):
     assert page.evaluate("document.querySelector('[data-i=\"b\"]').classList.contains('us-sf-hide')")
     page.keyboard.press("Escape")  # (toque fora: o ajuste de toque do Chrome puxa para o link vizinho)
     assert shadow(page, "return r.querySelector('.panel').hidden")
+
+
+def test_aliexpress_loader_completa_lote_embutido_sem_executar_html(make_ctx):
+    """O primeiro HTML pode ter menos cartões do que o JSON; o terceiro entra uma vez só."""
+    ctx = make_ctx()
+    serve(ctx, "https://pt.aliexpress.com/**", "ali-loader.html")
+    page = open_page(ctx, "https://pt.aliexpress.com/w/wholesale-loader.html")
+    inject(page, S)
+    page.wait_for_timeout(700)
+    got = page.evaluate("""() => ({ ids:[...document.querySelectorAll('[data-us-sf-product]')].map(e => e.dataset.usSfProduct),
+      cards:document.querySelectorAll('.us-sf-load-card').length,
+      scripts:document.querySelectorAll('.us-sf-more script').length,
+      status:document.querySelector('.us-sf-load-status')?.innerText || '' })""")
+    assert got["ids"] == ["1005000000000003"]
+    assert got["cards"] == 1 and got["scripts"] == 0
+    # The fixture deliberately has no page 2.  The complete initial batch stays
+    # available and the schema mismatch stops automatic retries.
+    assert "Não foi possível carregar" in got["status"]
+    page.locator("#us-shop-filter .pill").click()
+    assert shadow(page, "return r.querySelector('.sw[data-k=\"autoLoad\"]')?.getAttribute('aria-checked')") == "true"
+
+
+def test_aliexpress_loader_remove_duplicata_quando_lazy_native_chega(make_ctx):
+    ctx = make_ctx()
+    serve(ctx, "https://pt.aliexpress.com/**", "ali-loader.html")
+    page = open_page(ctx, "https://pt.aliexpress.com/w/wholesale-loader.html")
+    inject(page, S); page.wait_for_timeout(500)
+    assert page.locator('[data-us-sf-product="1005000000000003"]').count() == 1
+    page.evaluate("""() => { const w=document.createElement('div');w.className='card-out-wrapper';
+      w.innerHTML='<a class="cards--card--native" href="/item/1005000000000003.html"><img width="180" height="180">4.9<br>200 vendido(s)</a>';
+      document.querySelector('main').append(w); }""")
+    page.wait_for_timeout(700)
+    assert page.locator('[data-us-sf-product="1005000000000003"]').count() == 0
+
+
+def _ali_payload(page, items, total=30, size=3):
+    return ("<script>!(function(){var a={};var b = " + json.dumps({
+        "loaderData": {"/": {"data": {"searchResult": {"mods": {"itemList": {"content": items}},
+        "pageInfo": {"page": page, "pageSize": size, "totalResults": total}}}}}}) + ";a.done=true;})();</script>")
+
+
+def _ali_item(number, rating=4.9, sold="200 vendido(s)", sponsored=False):
+    item = {"productId": f"1005000000000{number:03}", "title": {"displayTitle": f"Produto {number}"},
+            "image": {"imgUrl": "//example.invalid/item.jpg"}, "prices": {"salePrice": {"formattedPrice": "R$ 10"}},
+            "evaluation": {"starRating": rating}, "trade": {"tradeDesc": sold}}
+    if sponsored:
+        item["sponsored"] = True
+    return item
+
+
+def _ali_html(payload, mobile=False):
+    card_class = "galleryItem--fixture" if mobile else "card-out-wrapper"
+    link_class = "" if mobile else "cards--card--fixture"
+    return ("<!doctype html><main>"
+            f'<div class="{card_class}"><a class="{link_class}" href="/item/1005000000000001.html"><img width="180" height="180">4.9<br>200 vendido(s)</a></div>'
+            f'<div class="{card_class}"><a class="{link_class}" href="/item/1005000000000002.html"><img width="180" height="180">4.0<br>10 vendido(s)</a></div>'
+            "</main><div class=\"pagination--pagination--fixture\"></div>" + payload)
+
+
+def _itemlist_bootstrap(page, items, total=6, size=3):
+    """Observed alternate bootstrap: itemList/pageInfo rather than searchResult."""
+    return ("<script>window.boot={\"itemList\": " + json.dumps({"content": items}) +
+            ", \"pageInfo\": " + json.dumps({"page": page, "pageSize": size, "totalResults": total}) + "};</script>")
+
+
+def test_aliexpress_loader_keeps_native_mobile_cards_filtered(make_ctx):
+    ctx = make_ctx(mobile=True)
+    body = _ali_html(_ali_payload(1, [_ali_item(1), _ali_item(2, 4.0, "10 vendido(s)"), _ali_item(3)], total=3), mobile=True)
+    ctx.route("https://m.aliexpress.com/w/wholesale-loader.html", lambda route: route.fulfill(status=200, body=body))
+    page = open_page(ctx, "https://m.aliexpress.com/w/wholesale-loader.html")
+    inject(page, S); page.wait_for_timeout(650)
+    # Presence of the loader card must not make the adapter forget galleryItem mobile cards.
+    got = page.evaluate("""() => ({native: document.querySelectorAll('[class^=galleryItem--] .us-sf-dot').length,
+      low: document.querySelector('[class^=galleryItem--]:nth-child(2) a').classList.contains('us-sf-dim'),
+      loaded: document.querySelectorAll('.us-sf-load-card').length})""")
+    assert got == {"native": 2, "low": True, "loaded": 1}, got
+
+
+def test_aliexpress_loader_accepts_alternate_itemlist_bootstrap_and_autofills(make_ctx):
+    ctx = make_ctx()
+    first = _ali_html(_itemlist_bootstrap(1, [_ali_item(1), _ali_item(2, 4.0, "10 vendido(s)"), _ali_item(3)], total=6))
+    second = _itemlist_bootstrap(2, [_ali_item(4), _ali_item(5), _ali_item(6)], total=6)
+    hits = []
+    ctx.route("https://pt.aliexpress.com/w/wholesale-loader.html", lambda route: route.fulfill(status=200, body=first))
+    def page_two(route):
+        hits.append(route.request.url); route.fulfill(status=200, body=second)
+    ctx.route("https://pt.aliexpress.com/w/wholesale-loader.html?page=2", page_two)
+    page = open_page(ctx, "https://pt.aliexpress.com/w/wholesale-loader.html")
+    inject(page, S); page.wait_for_timeout(1250)
+    assert hits == ["https://pt.aliexpress.com/w/wholesale-loader.html?page=2"]
+    assert page.locator('[data-us-sf-product="1005000000000006"]').count() == 1
+    assert page.locator('.us-sf-more').get_attribute("data-state") == "exhausted"
+
+
+def test_aliexpress_loader_cap_retains_partial_page_until_continue(make_ctx):
+    ctx = make_ctx()
+    items = [_ali_item(n) for n in range(1, 503)]
+    body = _ali_html(_ali_payload(1, items, total=502, size=502))
+    ctx.route("https://pt.aliexpress.com/w/wholesale-loader.html", lambda route: route.fulfill(status=200, body=body))
+    page = open_page(ctx, "https://pt.aliexpress.com/w/wholesale-loader.html")
+    inject(page, S); page.wait_for_timeout(1000)
+    grid = page.locator('.us-sf-more')
+    assert grid.get_attribute("data-state") == "paused"
+    assert page.locator('.us-sf-load-wrap').count() == 498
+    grid.get_by_role("button", name="Continuar").click(); page.wait_for_timeout(500)
+    assert page.locator('.us-sf-load-wrap').count() == 500
+    assert page.locator('[data-us-sf-product="1005000000000502"]').count() == 1
+    assert grid.get_attribute("data-state") == "exhausted"
+
+
+def test_aliexpress_loader_pagina_seguinte_filtra_e_preserva_bootstrap(make_ctx):
+    ctx = make_ctx()
+    serve(ctx, "https://pt.aliexpress.com/w/wholesale-loader.html", "ali-loader.html")
+    ctx.route("https://pt.aliexpress.com/w/wholesale-loader.html?page=2", lambda route: route.fulfill(
+        status=200, body=_ali_payload(2, [_ali_item(4), _ali_item(5, rating=4.0), _ali_item(6, rating=4.0, sponsored=True)]),
+        content_type="text/html"))
+    page = open_page(ctx, "https://pt.aliexpress.com/w/wholesale-loader.html")
+    inject(page, S); page.wait_for_timeout(450)
+    page.evaluate("window.dispatchEvent(new Event('scroll'))")
+    page.wait_for_timeout(900)
+    got = page.evaluate("""() => ({ids:[...document.querySelectorAll('[data-us-sf-product]')].map(e=>e.dataset.usSfProduct),
+      pass:document.querySelector('[data-us-sf-product="1005000000000004"] .us-sf-dot')?.dataset.v,
+          low:document.querySelector('[data-us-sf-product="1005000000000005"] a').classList.contains('us-sf-dim'), lowv:document.querySelector('[data-us-sf-product="1005000000000005"] .us-sf-dot')?.dataset.v,
+      sponsored:document.querySelector('[data-us-sf-product="1005000000000006"]').dataset.usSfSponsored,
+          hidden:document.querySelector('[data-us-sf-product="1005000000000006"]').classList.contains('us-sf-hide'), spv:document.querySelector('[data-us-sf-product="1005000000000006"] .us-sf-dot')?.dataset.v})""")
+    assert "1005000000000004" in got["ids"] and got["pass"] == "pass"
+    assert got["low"] and got["sponsored"] == "1" and got["hidden"], got
+
+
+def test_aliexpress_loader_http_failure_preserves_results(make_ctx):
+    ctx = make_ctx()
+    serve(ctx, "https://pt.aliexpress.com/w/wholesale-loader.html", "ali-loader.html")
+    ctx.route("https://pt.aliexpress.com/w/wholesale-loader.html?page=2", lambda route: route.fulfill(status=503, body="indisponível"))
+    page = open_page(ctx, "https://pt.aliexpress.com/w/wholesale-loader.html")
+    inject(page, S); page.wait_for_timeout(450)
+    page.evaluate("window.dispatchEvent(new Event('scroll'))")
+    page.wait_for_timeout(1000)
+    assert page.locator('[data-us-sf-product="1005000000000003"]').count() == 1
+    assert "Não foi possível" in page.locator('.us-sf-load-status').inner_text()
 
 
 @pytest.mark.parametrize("dark", [False, True])
@@ -312,3 +453,208 @@ def test_posicao_relative_so_em_cartao_static(make_ctx):
     r = page.evaluate("""() => ['pass', 'lowrate'].map(i => { const c = document.querySelector(`[data-id="${i}"]`);
       return [c.classList.contains('us-sf-rel'), getComputedStyle(c).position]; })""")
     assert r == [[False, "sticky"], [True, "relative"]]
+
+
+@pytest.mark.parametrize('action', ['navigate', 'disable', 'pause'])
+def test_loader_discards_delayed_response(action, make_ctx):
+    ctx = make_ctx()
+    serve(ctx, 'https://pt.aliexpress.com/**', 'ali-loader.html')
+    page = open_page(ctx, 'https://pt.aliexpress.com/w/wholesale-loader.html')
+    page.evaluate('''() => { window.calls = 0; window.fetch = () => {
+      window.calls++; return new Promise(resolve => { window.releaseResponse = body =>
+        resolve(new Response(body, {status:200})); }); }; }''')
+    inject(page, S)
+    page.wait_for_function('typeof window.releaseResponse === "function"')
+    if action == 'navigate':
+        page.evaluate('history.pushState({}, "", "?SearchText=other")')
+        page.wait_for_function('!document.querySelector(".us-sf-more")')
+    elif action == 'disable':
+        page.locator('#us-shop-filter .pill').click()
+        page.locator('#us-shop-filter .sw[data-k="autoLoad"]').click()
+    else:
+        page.get_by_role('button', name='Pausar', exact=True).click()
+    page.evaluate('body => window.releaseResponse(body)', _ali_payload(2, [_ali_item(4)], total=6))
+    page.wait_for_timeout(700)
+    assert page.locator('[data-us-sf-product="1005000000000004"]').count() == 0
+    assert page.evaluate('window.calls') == 1
+    if action == 'navigate':
+        assert page.locator('.us-sf-more').count() == 0, 'old bootstrap must not mount for new URL'
+
+
+@pytest.mark.parametrize('failure', ['http', 'timeout', 'wrong_page'])
+def test_loader_failed_request_waits_for_explicit_retry(failure, make_ctx):
+    ctx = make_ctx()
+    serve(ctx, 'https://pt.aliexpress.com/**', 'ali-loader.html')
+    page = open_page(ctx, 'https://pt.aliexpress.com/w/wholesale-loader.html')
+    page.clock.install()
+    page.evaluate('''data => { window.calls = 0; window.fetch = (url, options) => {
+      window.calls++;
+      if(window.calls > 1) return Promise.resolve(new Response(data.good));
+      if(data.failure === 'http') return Promise.resolve(new Response('', {status:503}));
+      if(data.failure === 'wrong_page') return Promise.resolve(new Response(data.wrong));
+      return new Promise((resolve,reject) => options.signal.addEventListener('abort',
+        () => reject(new DOMException('timeout','AbortError'))));
+    }; }''', {'failure': failure, 'good': _ali_payload(2, [_ali_item(4)], total=6),
+              'wrong': _ali_payload(1, [_ali_item(4)], total=6)})
+    inject(page, S)
+    page.clock.run_for(16000)
+    assert page.locator('.us-sf-more').get_attribute('data-state') == 'failed'
+    for _ in range(3):
+        page.evaluate('window.dispatchEvent(new Event("scroll"))')
+        page.clock.run_for(1000)
+    assert page.evaluate('window.calls') == 1
+    page.get_by_role('button', name='Tentar novamente', exact=True).click()
+    page.clock.run_for(1500)
+    assert page.evaluate('window.calls') == 2
+    assert page.locator('[data-us-sf-product="1005000000000004"]').count() == 1
+    assert page.locator('.us-sf-more').get_attribute('data-state') == 'exhausted'
+
+
+def test_loader_three_invisible_batches_pause(make_ctx):
+    ctx = make_ctx()
+    ctx.add_init_script("localStorage.setItem('__gm:site:aliexpress', JSON.stringify({mode:'hide'}))")
+    serve(ctx, 'https://pt.aliexpress.com/**', 'ali-loader.html')
+    page = open_page(ctx, 'https://pt.aliexpress.com/w/wholesale-loader.html')
+    page.clock.install()
+    responses = [_ali_payload(p, [_ali_item(p+2, rating=1)], total=30) for p in range(2, 7)]
+    page.evaluate('''responses => { window.calls=0; window.fetch=()=>
+      Promise.resolve(new Response(responses[window.calls++])); }''', responses)
+    inject(page, S)
+    page.clock.run_for(9000)
+    assert page.evaluate('window.calls') == 3
+    assert page.locator('.us-sf-more').get_attribute('data-state') == 'paused'
+    assert 'três páginas' in page.locator('.us-sf-load-status').inner_text()
+    assert page.locator('.us-sf-load-wrap.us-sf-hide').count() == 3
+    assert page.locator('.us-sf-load-wrap.us-sf-hide').first.evaluate('(e)=>getComputedStyle(e).display') == 'none'
+
+
+def test_loader_scroll_resets_five_page_burst(make_ctx):
+    ctx = make_ctx()
+    serve(ctx, 'https://pt.aliexpress.com/**', 'ali-loader.html')
+    page = open_page(ctx, 'https://pt.aliexpress.com/w/wholesale-loader.html')
+    page.clock.install()
+    responses = [_ali_payload(p, [_ali_item(p+2)], total=90) for p in range(2, 20)]
+    page.evaluate('''responses => { window.calls=0; window.fetch=()=>
+      Promise.resolve(new Response(responses[window.calls++])); }''', responses)
+    # Keep the result boundary near the viewport to exercise the continuous
+    # demand limit without depending on how many columns Chromium lays out.
+    page.add_style_tag(content='.us-sf-more {height:100px!important;overflow:hidden!important}')
+    inject(page, S)
+    page.clock.run_for(2200)
+    before_scroll = page.evaluate('window.calls')
+    assert 1 <= before_scroll < 5
+    page.evaluate('window.dispatchEvent(new Event("scroll"))')
+    page.clock.run_for(8000)
+    assert page.evaluate('window.calls') == before_scroll + 5
+    assert page.locator('.us-sf-more').get_attribute('data-state') == 'paused'
+    assert 'cinco páginas' in page.locator('.us-sf-load-status').inner_text()
+
+# Item da grade ocupado por cada cartão: posição do canto, oculto e se é filho direto do contêiner.
+GRID = """sel => Object.fromEntries([...document.querySelectorAll(sel)].map(e => { const r = e.getBoundingClientRect();
+  return [e.dataset.i, {x: Math.round(r.left), y: Math.round(r.top), hidden: getComputedStyle(e).display === 'none',
+    v: e.querySelector('.us-sf-dot')?.dataset.v || null}]; }))"""
+
+
+def test_aliexpress_ocultar_tira_o_item_da_grade_sem_buraco(make_ctx):
+    ctx = make_ctx()
+    ctx.add_init_script("localStorage.setItem('__gm:site:aliexpress', JSON.stringify({mode: 'hide'}))")
+    serve(ctx, "https://pt.aliexpress.com/**", "ali-grade.html")
+    page = open_page(ctx, "https://pt.aliexpress.com/w/wholesale-descalcificador.html")
+    before = page.evaluate(GRID, "#card-list > *")
+    inject(page, S)
+    after = page.evaluate(GRID, "#card-list > *")
+    assert [k for k, v in after.items() if v["hidden"]] == ["b", "e"]
+    # o próprio filho direto de #card-list some (não o invólucro interno) e os seguintes sobem uma casa
+    assert page.evaluate("[...document.querySelectorAll('.us-sf-hide')].every(e => e.parentElement.id === 'card-list')")
+    assert (after["c"]["x"], after["c"]["y"]) == (before["b"]["x"], before["b"]["y"])
+    assert (after["f"]["x"], after["f"]["y"]) == (before["d"]["x"], before["d"]["y"])
+    assert after["a"]["v"] == "pass" and after["h"]["v"] == "pass"
+    st = page.evaluate(STATS)
+    assert (st["total"], st["fail"], st["hidden"]) == ("8", "2", "2")
+    # desligar ocultar devolve os itens, esmaecidos
+    page.locator("#us-shop-filter .pill").click()
+    page.locator('#us-shop-filter .sw[data-k="hide"]').click()
+    back = page.evaluate(GRID, "#card-list > *")
+    assert not any(v["hidden"] for v in back.values()) and back["b"]["v"] == "fail"
+    assert page.errors == []
+
+
+def test_amazon_circulo_alinhado_na_moldura_da_foto(make_ctx):
+    ctx = make_ctx()
+    serve(ctx, "https://www.amazon.com.br/**", "shop-amazon-grade.html")
+    page = open_page(ctx, AMZ)
+    inject(page, S)
+    d = page.evaluate("""() => [...document.querySelectorAll('[data-component-type="s-search-result"]')].map(c => {
+      const f = c.querySelector('.s-image-square-aspect').getBoundingClientRect(), i = c.querySelector('.s-image').getBoundingClientRect();
+      const o = c.querySelector('.us-sf-dot > i').getBoundingClientRect();
+      return {id: c.dataset.id, frame: [o.top - f.top, o.left - f.left], img: [o.top - i.top, o.left - i.left], top: o.top, left: o.left - c.getBoundingClientRect().left}; })""")
+    assert all(x["frame"] == [12, 12] for x in d), d
+    assert any(x["img"] != [12, 12] for x in d), "a foto varia dentro da moldura: o círculo não segue a foto"
+    for row in (d[:4], d[4:]):  # mesma fileira, com ou sem selo: mesma altura e mesma distância da borda do cartão
+        assert len({x["top"] for x in row}) == 1 and len({x["left"] for x in row}) == 1, row
+    assert page.errors == []
+
+
+def shopee(make_ctx, **kw):
+    ctx = make_ctx()
+    if kw.get("hide"):
+        ctx.add_init_script("localStorage.setItem('__gm:site:shopee', JSON.stringify({mode: 'hide'}))")
+    serve(ctx, "https://shopee.com.br/**", "shop-shopee.html")
+    page = open_page(ctx, "https://shopee.com.br/search?keyword=descalcificador")
+    return ctx, page
+
+
+DOTS_SHOPEE = """() => [...document.querySelectorAll('li.shopee-search-item-result__item')].filter(li => li.querySelector('.us-sf-dot')).map(li => {
+  const i = li.querySelector('img.foto').getBoundingClientRect(), o = li.querySelector('.us-sf-dot > i').getBoundingClientRect();
+  return [li.dataset.i, Math.round(o.top - i.top), Math.round(o.left - i.left)]; })"""
+
+
+def test_shopee_circulo_no_canto_da_foto(make_ctx):
+    ctx, page = shopee(make_ctx)
+    inject(page, S)
+    d = page.evaluate(DOTS_SHOPEE)
+    assert [x[0] for x in d] == ["ok", "ruim", "poucas", "ok2", "nada", "ok3"], "li vazio (ainda carregando) não ganha círculo"
+    assert all(x[1:] == [12, 12] for x in d), d
+    # página rolada: o <picture> (display:contents) não tem caixa; o círculo continua no canto da foto
+    page.evaluate("scrollTo(0, 260)")
+    page.wait_for_timeout(200)
+    page.locator("#us-shop-filter .pill").click()
+    set_range(page, "#r", 4.6)  # força nova varredura com a página rolada
+    d = page.evaluate(DOTS_SHOPEE)
+    assert page.evaluate("scrollY") > 200 and all(x[1:] == [12, 12] for x in d), d
+    c = page.evaluate(GRID, "li[data-i]")
+    assert {k: v["v"] for k, v in c.items()} == {"ok": "pass", "ruim": "fail", "poucas": "fail", "ad": None, "ok2": "pass", "nada": "unknown", "ok3": "pass"}
+    assert c["ad"]["hidden"], "Shopee verificada: patrocinado reprovado some"
+    assert page.evaluate(STATS)["total"] == "7", "7 cartões; os 3 li vazios não contam"
+    assert shadow(page, "return r.querySelector('.note.exp')") is None, "sem aviso de experimental"
+    page.evaluate("fill()")  # li vazio carrega depois: vira cartão
+    page.wait_for_timeout(700)
+    assert page.evaluate(GRID, "li[data-i]")["tarde"]["v"] == "fail"
+    assert page.errors == []
+
+
+def test_shopee_ocultar_reprovados_tira_o_li(make_ctx):
+    ctx, page = shopee(make_ctx, hide=True)
+    before = page.evaluate(GRID, "li[data-i]")
+    inject(page, S)
+    after = page.evaluate(GRID, "li[data-i]")
+    assert sorted(k for k, v in after.items() if v["hidden"]) == ["ad", "poucas", "ruim"]
+    assert page.evaluate("[...document.querySelectorAll('.us-sf-hide')].every(e => e.matches('li.shopee-search-item-result__item'))")
+    assert (after["ok2"]["x"], after["ok2"]["y"]) == (before["ruim"]["x"], before["ruim"]["y"])
+    st = page.evaluate(STATS)
+    assert (st["fail"], st["hidden"], st["spHidden"], st["dimmed"]) == ("3", "2", "1", "0")
+    assert page.errors == []
+
+
+def test_loader_single_hidden_card_does_not_hide_controls(make_ctx):
+    ctx = make_ctx()
+    ctx.add_init_script("localStorage.setItem('__gm:site:aliexpress', JSON.stringify({mode:'hide'}))")
+    body = _ali_html(_ali_payload(1, [_ali_item(1), _ali_item(2), _ali_item(3, rating=1)]))
+    ctx.route('https://pt.aliexpress.com/w/wholesale-loader.html', lambda r: r.fulfill(status=200, body=body))
+    ctx.route('https://pt.aliexpress.com/w/wholesale-loader.html?page=2', lambda r: r.fulfill(status=503, body='unavailable'))
+    page = open_page(ctx, 'https://pt.aliexpress.com/w/wholesale-loader.html')
+    inject(page, S)
+    page.wait_for_timeout(700)
+    assert page.locator('.us-sf-load-wrap.us-sf-hide').count() == 1
+    assert page.locator('.us-sf-more').is_visible()
+    assert page.get_by_role('button', name='Tentar novamente').is_visible()
