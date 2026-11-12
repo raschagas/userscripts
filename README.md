@@ -1,8 +1,8 @@
 # userscripts
 
 Userscripts pessoais para Violentmonkey ou Tampermonkey (Edge, Chrome, Firefox e Edge/Kiwi no
-Android). Cada arquivo em `src/` é autocontido: sem `@require`, sem biblioteca externa, sem acesso
-à rede. Padrão visual próprio: tokens `--us-*`, círculo 12/12 px, véu, painel/gaveta com sliders.
+Android). Cada arquivo em `src/` é autocontido: sem `@require` ou biblioteca externa. Só a continuação de buscas AliExpress faz requisições
+à própria origem; os demais scripts não acessam a rede. Padrão visual próprio: tokens `--us-*`, círculo 12/12 px, véu, painel/gaveta com sliders.
 
 ## Instalar
 
@@ -169,7 +169,7 @@ python3 smoke_real.py         # páginas reais (rede); resumo em docs/screenshot
 ```
 
 - `test_static.py`: `node --check`, cabeçalho (namespace, versão, `@downloadURL`/`@updateURL`,
-  grants mínimos, sem `@require`, sem rede) e escopo de `@match`/`@exclude` por um verificador
+  grants mínimos, sem `@require`, rede restrita à continuação AliExpress) e escopo de `@match`/`@exclude` por um verificador
   próprio (`matchpattern.py`), inclusive que o `@match` de dados pessoais só tem sites genéricos.
 - `test_shop_filter.py`: escala 5 e 10, patrocinado aprovado/reprovado/sem nota, ocultar/esmaecer,
   sliders e toggles mudando o resultado e persistindo após recarregar, rolagem infinita, nó

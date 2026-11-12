@@ -42,7 +42,7 @@ def test_cabecalho(name):
     assert d["name"] and d["description"]
     assert "require" not in d, "sem @require remoto"
     assert set(d["grant"]) <= {"GM_getValue", "GM_setValue", "GM_registerMenuCommand"}, d["grant"]
-    assert "connect" not in d, "nenhum script faz rede"
+    assert "connect" not in d, "sem privilégios de rede entre origens"
     for k, v in m:  # comentário no fim da linha vira parte do valor
         assert "//" not in v or k in ("downloadURL", "updateURL", "match", "exclude", "namespace"), (k, v)
         if k in ("match", "exclude"):
