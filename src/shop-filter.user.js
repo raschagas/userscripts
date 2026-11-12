@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Filtro de lojas — nota e vendas em cada anúncio
 // @namespace    raschagas/userscripts
-// @version      1.0.0
+// @version      1.1.0
 // @description  Marca cada anúncio com um círculo verde, vermelho ou cinza pela nota e pela quantidade de avaliações ou vendas, esmaece ou oculta os reprovados, some com patrocinados reprovados e corrige links de combos do AliExpress. Ajustes por site.
 // @match        https://*.aliexpress.com/*
 // @match        https://www.amazon.com.br/*
@@ -113,14 +113,17 @@
   const ADAPTERS = [
     { id: 'aliexpress', name: 'AliExpress', host: /(^|\.)aliexpress\.com$/, scale: 5, product: /\/item\/(\d{6,})\.html|productIds?=(\d{6,})/i,
       cards: () => {
-        const pc = qsa('a[class*="cards--card--"]'); if (pc.length) return pc;
-        const seen = new Set(), out = [];
+        const out = qsa('a[class*="cards--card--"], a.us-sf-load-card');
+        const seen = new Set(out);
         for (const a of qsa('[class^="galleryItem--"] a[href*="/item/"], [class*=" galleryItem--"] a[href*="/item/"]')) {
-          const g = a.closest('[class^="galleryItem--"], [class*=" galleryItem--"]'); if (seen.has(g)) continue; seen.add(g); out.push(a);
+          const g = a.closest('[class^="galleryItem--"], [class*=" galleryItem--"]'); if (seen.has(g)) continue; seen.add(g); if (!seen.has(a)) { seen.add(a); out.push(a); }
         }
         return out;
       },
       extract: c => {
+        if (c.classList.contains('us-sf-load-card')) return {
+          rating: c.dataset.rating === '' ? null : Number(c.dataset.rating),
+          count: c.dataset.count === '' ? null : Number(c.dataset.count), countKind: 'sold' };
         const L = linesOf(c);
         const r = bareRating(c, L);
         const m = RE_SOLD.exec(L.join('\n'));
@@ -128,8 +131,8 @@
         return g || { rating: r ? toRating(r[1]) : null, count: m ? toInt(m[1] + (m[2] ? ' ' + m[2] : '')) : null, countKind: m ? 'sold' : null };
       },
       anchor: imgAnchor,
-      wrapper: c => c.closest('[class*="card-out-wrapper"]') || c.closest('[class^="galleryItem--"], [class*=" galleryItem--"]') || c,
-      sponsored: (c, w) => sponsoredText(c) || sponsoredText(w) },
+      wrapper: c => c.classList.contains('us-sf-load-card') ? c.parentElement : (c.closest('[class*="card-out-wrapper"]') || c.closest('[class^="galleryItem--"], [class*=" galleryItem--"]') || c),
+      sponsored: (c, w) => c.dataset.usSfSponsored === '1' || (w && w.dataset.usSfSponsored === '1') || sponsoredText(c) || sponsoredText(w) },
     { id: 'amazon', name: 'Amazon', host: /(^|\.)amazon\.com\.br$/, scale: 5, product: /\/(?:dp|gp\/product)\/([A-Z0-9]{10})/,
       cards: () => qsa('[data-component-type="s-search-result"]'),
       extract: c => {
@@ -200,7 +203,7 @@
 
   // ---------- ajustes por site, na escala nativa ----------
   const KEY = 'site:' + A.id;
-  const DEF = { enabled: true, minRating: round1(A.scale * 0.9), minCount: 100, mode: 'dim', sponsoredOnlyIfPass: true, showInfo: true, rewriteCombos: true };
+  const DEF = { enabled: true, minRating: round1(A.scale * 0.9), minCount: 100, mode: 'dim', sponsoredOnlyIfPass: true, showInfo: true, rewriteCombos: true, autoLoad: true };
   const cfg = Object.assign({}, DEF, (() => { const v = get(KEY, null); try { return typeof v === 'string' ? JSON.parse(v) : (v || {}); } catch (_) { return {}; } })());
   const save = () => set(KEY, Object.assign({}, cfg));
 
@@ -334,7 +337,9 @@
 .us-sf-dot>i{display:block!important;width:var(--us-dot)!important;height:var(--us-dot)!important;box-sizing:border-box!important;border-radius:50%!important;border:2px solid #fff!important;box-shadow:0 1px 4px rgba(0,0,0,.45);flex:none;margin:0!important}
 .us-sf-dot>i[data-v="pass"]{background:var(--us-pass)!important}.us-sf-dot>i[data-v="fail"]{background:var(--us-fail)!important}.us-sf-dot>i[data-v="unknown"]{background:var(--us-unknown)!important}
 .us-sf-dot>span{background:rgba(17,24,39,.85)!important;color:#fff!important;padding:2px 7px!important;border-radius:10px!important;white-space:nowrap!important;font:inherit!important;line-height:12px!important;height:16px!important;box-sizing:border-box!important;letter-spacing:0!important;text-transform:none!important}
-.us-sf-dot>span.us-sf-sp{background:var(--us-accent)!important}`;
+.us-sf-dot>span.us-sf-sp{background:var(--us-accent)!important}
+.us-sf-more{display:grid!important;grid-template-columns:repeat(auto-fill,minmax(180px,1fr))!important;gap:12px!important;margin:18px auto!important;max-width:1200px!important;padding:0 12px!important}
+.us-sf-load-wrap{min-width:0!important}.us-sf-load-wrap.us-sf-hide{display:none!important}.us-sf-load-card{position:relative!important;display:block!important;text-decoration:none!important;color:inherit!important;border:1px solid var(--us-border)!important;border-radius:10px!important;overflow:hidden!important;background:var(--us-surface)!important;color:var(--us-text)!important;min-height:280px!important}.us-sf-load-card img{display:block!important;width:100%!important;height:clamp(140px,16vw,220px)!important;object-fit:contain!important;background:var(--us-surface-2)!important}.us-sf-load-card>strong,.us-sf-load-card>span{display:block!important;padding:0 9px!important}.us-sf-load-card strong{font:600 13px/1.35 var(--us-font)!important;margin:8px 0 4px!important;display:-webkit-box!important;-webkit-line-clamp:2!important;-webkit-box-orient:vertical!important;overflow:hidden!important}.us-sf-load-card>span{font:12px/1.4 var(--us-font)!important;margin-bottom:7px!important}.us-sf-load-status{grid-column:1/-1!important;display:flex!important;align-items:center!important;justify-content:center!important;gap:10px!important;min-height:44px!important;color:#4b5563!important;font:13px/1.4 var(--us-font)!important}.us-sf-load-status button{min-height:44px!important;border:1px solid #2563eb!important;border-radius:18px!important;background:#fff!important;color:#2563eb!important;padding:0 14px!important;font:600 13px var(--us-font)!important;cursor:pointer!important}`;
   function injectCss() {
     injectTokens();
     if (document.getElementById('us-sf-style')) return;
@@ -382,6 +387,226 @@
     return spots.length;
   }
   const validCard = c => productKeys(c).size <= 1 && productImages(c) <= 1;
+
+  // AliExpress pagination is data-only: downloaded scripts are never executed.
+  const aliLoader = (() => {
+    let generation = 0, state = null, wakeTimer = 0, lastBootstrap = null;
+    const nativeCards = () => A.cards().filter(c => !c.closest('.us-sf-more'));
+    const enabled = () => A.id === 'aliexpress' && cfg.enabled && cfg.autoLoad && /^\/w\//.test(location.pathname);
+    const currentPage = () => Number(new URL(location.href).searchParams.get('page') || 1);
+
+    function jsonObject(text, start) {
+      if (text[start] !== '{') return null;
+      let depth = 0, quoted = false, escaped = false;
+      for (let i = start; i < text.length; i++) {
+        const ch = text[i];
+        if (quoted) {
+          if (escaped) escaped = false;
+          else if (ch === '\\') escaped = true;
+          else if (ch === '"') quoted = false;
+        } else if (ch === '"') quoted = true;
+        else if (ch === '{') depth++;
+        else if (ch === '}' && --depth === 0) {
+          try { return JSON.parse(text.slice(start, i + 1)); } catch (_) { return null; }
+        }
+      }
+      return null;
+    }
+    function objects(text, key) {
+      const re = new RegExp('"' + key + '"\\s*:\\s*(?=\\{)', 'g'), found = [];
+      let match;
+      while ((match = re.exec(text))) {
+        const value = jsonObject(text, re.lastIndex);
+        if (value) found.push(value);
+      }
+      return found;
+    }
+    function payload(html, expectedPage) {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      for (const script of doc.scripts) {
+        const text = script.textContent;
+        if (text.includes('const aliLoader =')) continue;
+        const results = objects(text, 'searchResult');
+        // Both observed bootstraps contain itemList and pageInfo in the same script.
+        // Require unambiguous metadata instead of guessing from nearby text.
+        if (!results.length) {
+          const lists = objects(text, 'itemList'), infos = objects(text, 'pageInfo');
+          if (lists.length === 1 && infos.length === 1) results.push({ mods: { itemList: lists[0] }, pageInfo: infos[0] });
+        }
+        for (const result of results) {
+          const items = result?.mods?.itemList?.content, info = result?.pageInfo;
+          if (!Array.isArray(items) || !info) continue;
+          const { page, pageSize, totalResults } = info;
+          if (![page, pageSize, totalResults].every(Number.isSafeInteger) || page !== expectedPage || pageSize < 1 || totalResults < 0) continue;
+          if (items.some(c => !c || !/^\d{6,}$/.test(String(c.productId || '')))) continue;
+          if (!items.length && totalResults > 0 && page <= Math.ceil(totalResults / pageSize)) continue;
+          return { items, page, pages: Math.ceil(totalResults / pageSize) };
+        }
+      }
+      return null;
+    }
+    function productId(c) { const m = A.product.exec(c.getAttribute('href') || ''); return m && (m[1] || m[2]); }
+    function isSponsored(card) {
+      return card.isAd === true || card.isAd === 'true' || card.isAd === '1' || card.isAd === 1 ||
+        card.sponsored === true || card.isSponsored === true ||
+        /^(?:sponsored|patrocinado|anúncio|anuncio|advertisement)$/i.test(String(card.label || card.adLabel || '').trim());
+    }
+    function make(card) {
+      const id = String(card.productId), w = document.createElement('div'), a = document.createElement('a');
+      w.className = 'us-sf-load-wrap'; w.dataset.usSfProduct = id;
+      a.className = 'us-sf-load-card'; a.href = new URL(`/item/${id}.html`, location.origin).href;
+      if (isSponsored(card)) { a.dataset.usSfSponsored = '1'; w.dataset.usSfSponsored = '1'; }
+      const img = document.createElement('img'); img.loading = 'lazy'; img.alt = '';
+      try { const url = new URL(card.image?.imgUrl || '', location.origin); if (url.protocol === 'https:' && card.image?.imgUrl) img.src = url.href; } catch (_) { /* no image */ }
+      const title = document.createElement('strong'); title.textContent = card.title?.displayTitle || card.title?.seoTitle || 'Produto AliExpress';
+      const price = document.createElement('span'); price.textContent = card.prices?.salePrice?.formattedPrice || card.prices?.pricesStyle?.formattedPrice || '';
+      const score = document.createElement('span'), sales = document.createElement('span');
+      const rawRating = card.evaluation?.starRating;
+      const rating = rawRating == null ? null : toRating(String(rawRating));
+      const sold = RE_SOLD.exec(card.trade?.tradeDesc || '');
+      a.dataset.rating = rating == null || !Number.isFinite(rating) || rating < 0 || rating > 5 ? '' : String(rating);
+      a.dataset.count = sold ? String(toInt(sold[1] + (sold[2] ? ' ' + sold[2] : ''))) : '';
+      score.textContent = rating == null ? '' : String(rating); sales.textContent = card.trade?.tradeDesc || '';
+      if (rating != null) score.setAttribute('aria-label', `${rating} de 5 estrelas`);
+      a.append(img, title, price, score, sales); w.append(a);
+      return w;
+    }
+    function staysVisible(node) {
+      const c = node.querySelector('a'), v = verdict(A.extract(c));
+      if (A.sponsored(c, node) && cfg.sponsoredOnlyIfPass && v !== 'pass') return false;
+      return cfg.mode !== 'hide' || v !== 'fail';
+    }
+    function reconcile(s) {
+      const ids = new Set(nativeCards().map(productId).filter(Boolean));
+      for (const w of s.grid.querySelectorAll('.us-sf-load-wrap')) if (ids.has(w.dataset.usSfProduct)) w.remove();
+      for (const id of ids) s.seen.add(id);
+    }
+    function mount(data) {
+      const ids = new Set(data.items.map(c => String(c.productId)));
+      const wrappers = nativeCards().filter(c => ids.has(productId(c))).map(c => A.wrapper(c));
+      if (wrappers.length < 2) return null;
+      let host = wrappers[0].parentElement;
+      while (host && !wrappers.every(w => host.contains(w))) host = host.parentElement;
+      if (!host || host === document.body || host === document.documentElement) return null;
+      injectCss();
+      const grid = document.createElement('section'); grid.className = 'us-sf-more'; grid.setAttribute('aria-label', 'Mais resultados filtrados');
+      const status = document.createElement('div'); status.className = 'us-sf-load-status'; status.setAttribute('aria-live', 'polite');
+      grid.append(status); host.after(grid);
+      return { grid, status };
+    }
+    const active = s => state === s && s.generation === generation && enabled() && location.href === s.url;
+    function render(s) {
+      if (!active(s)) return;
+      s.grid.dataset.state = s.phase; s.grid.dataset.page = String(s.page);
+      s.grid.dataset.loaded = String(s.seen.size);
+      s.status.replaceChildren();
+      const label = document.createElement('span');
+      label.textContent = s.message || ({ idle: 'Mais resultados ao rolar', loading: 'Carregando resultados…', paused: 'Carregamento pausado', failed: 'Falha ao carregar. Você pode tentar novamente.', exhausted: 'Fim dos resultados' })[s.phase];
+      s.status.append(label);
+      const button = (text, action) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = text; b.addEventListener('click', action); s.status.append(b); };
+      if (s.phase === 'idle' || s.phase === 'loading') button('Pausar', () => pause(s, 'Pausado por você'));
+      if (s.phase !== 'loading' && s.phase !== 'exhausted') button(s.phase === 'failed' ? 'Tentar novamente' : s.phase === 'paused' ? 'Continuar' : 'Carregar mais', () => {
+        if (!active(s)) return;
+        if (s.seen.size >= s.cap) s.cap += 500;
+        s.burst = 0; s.empty = 0; s.message = ''; s.phase = 'idle';
+        if (s.pending) { consume(s); schedule(0, true); } else request(s);
+      });
+    }
+    function pause(s, message) {
+      if (!active(s)) return;
+      clearTimeout(wakeTimer); wakeTimer = 0;
+      s.phase = 'paused'; s.message = message;
+      // Invalidate the in-flight request even if the browser has already received its body.
+      s.requestId++; if (s.controller) s.controller.abort(); s.controller = null;
+      render(s);
+    }
+    function consume(s) {
+      const batch = s.pending;
+      if (!batch) return;
+      while (batch.offset < batch.data.items.length) {
+        const card = batch.data.items[batch.offset], id = String(card.productId);
+        if (s.seen.has(id)) { batch.offset++; continue; }
+        if (s.seen.size >= s.cap) { pause(s, `Pausado após ${s.cap} produtos`); return; }
+        const node = make(card);
+        // Hide before attachment so a rejected product never flashes unfiltered.
+        if (!staysVisible(node)) node.classList.add('us-sf-hide');
+        s.grid.insertBefore(node, s.status); s.seen.add(id); batch.offset++; batch.added++;
+        if (staysVisible(node)) batch.visible++;
+      }
+      s.page = batch.data.page; s.pages = batch.data.pages; s.pending = null;
+      if (!batch.initial) {
+        s.burst++;
+        s.empty = batch.visible ? 0 : s.empty + 1;
+      }
+      if (s.page >= s.pages) { s.phase = 'exhausted'; s.message = ''; }
+      else if (!batch.initial && !batch.added) { s.phase = 'failed'; s.message = 'Página repetida ou sem produtos novos. Carregamento interrompido.'; }
+      else if (s.empty >= 3) pause(s, 'Pausado após três páginas sem produtos visíveis');
+      else if (s.burst >= 5) pause(s, 'Pausado após cinco páginas consecutivas');
+      render(s);
+    }
+    async function request(s) {
+      if (!active(s) || s.phase !== 'idle') return;
+      const wait = Math.max(0, 1000 - (Date.now() - s.lastRequest));
+      if (wait) { queue(s, wait); return; }
+      s.phase = 'loading'; s.message = ''; s.lastRequest = Date.now(); render(s);
+      const target = s.page + 1, url = new URL(s.url); url.searchParams.set('page', String(target));
+      const controller = new AbortController(), requestId = ++s.requestId; s.controller = controller;
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      const valid = () => active(s) && s.requestId === requestId && s.phase === 'loading';
+      try {
+        const response = await fetch(url.href, { credentials: 'same-origin', signal: controller.signal, redirect: 'error' });
+        if (!response.ok) throw new Error('HTTP');
+        const data = payload(await response.text(), target);
+        if (!valid()) return;
+        if (!data) throw new Error('schema');
+        s.phase = 'idle'; s.pending = { data, offset: 0, added: 0, visible: 0, initial: false };
+        reconcile(s); consume(s); schedule(0, true);
+      } catch (_) {
+        if (valid()) { s.phase = 'failed'; s.message = 'Não foi possível carregar. Use Tentar novamente ou a paginação do site.'; render(s); }
+      } finally {
+        clearTimeout(timeout);
+        if (s.controller === controller) s.controller = null;
+      }
+    }
+    function queue(s, delay = 0) {
+      clearTimeout(wakeTimer);
+      wakeTimer = setTimeout(() => { wakeTimer = 0; if (active(s) && s.phase === 'idle') request(s); }, delay);
+    }
+    function check(s) {
+      if (!active(s) || s.phase !== 'idle') return;
+      if (s.grid.getBoundingClientRect().bottom <= innerHeight * 2) queue(s);
+    }
+    function stop() {
+      generation++; clearTimeout(wakeTimer); wakeTimer = 0;
+      if (state) { state.controller?.abort(); state.grid.remove(); }
+      state = null;
+    }
+    function start() {
+      if (!enabled()) { if (state) stop(); return; }
+      if (state && state.url !== location.href) stop();
+      if (!state) {
+        const data = payload(document.documentElement.outerHTML, currentPage());
+        if (!data) return; // Unsupported/challenged layouts retain native navigation.
+        const signature = JSON.stringify(data);
+        // SPA routing can leave the previous bootstrap in the document. Refuse to
+        // reuse it for a different search; native navigation remains available.
+        if (lastBootstrap && lastBootstrap.url !== location.href && lastBootstrap.signature === signature) return;
+        const mounted = mount(data); if (!mounted) return;
+        lastBootstrap = { url: location.href, signature };
+        state = { ...mounted, generation, url: location.href, phase: 'idle', message: '', seen: new Set(),
+          page: data.page - 1, pages: data.pages, pending: { data, offset: 0, added: 0, visible: 0, initial: true },
+          cap: 500, empty: 0, burst: 0, lastRequest: 0, requestId: 0, controller: null };
+        reconcile(state); consume(state); schedule(0, true);
+      } else reconcile(state);
+      check(state);
+    }
+    function scroll() {
+      if (!state) return;
+      if (!active(state)) { stop(); schedule(0, true); return; }
+      state.burst = 0; check(state);
+    }
+    return { start, stop, scroll };
+  })();
 
   function scan() {
     timer = 0; dirty = false;
@@ -432,6 +657,7 @@
     }
     if (A.id === 'aliexpress') {
       if (cfg.enabled && cfg.rewriteCombos && cards.length) { combos.apply(cards); combos.backstop(); } else combos.revert();
+      if (cfg.enabled && cfg.autoLoad) aliLoader.start(); else aliLoader.stop();
     }
     stats.ms = Math.round((performance.now() - t0) * 10) / 10;
     if (cards.length || ui) renderUi();
@@ -527,6 +753,7 @@ input[type=range]{width:100%;height:var(--us-target);margin:0;accent-color:var(-
   ${sw('sponsoredOnlyIfPass', 'Patrocinado só se aprovado', 'patrocinado reprovado ou sem nota some')}
   ${sw('showInfo', 'Mostrar nota e quantidade')}
   ${A.id === 'aliexpress' ? sw('rewriteCombos', 'Abrir a página do item', 'corrige links de combos e pacotes') : ''}
+  ${A.id === 'aliexpress' ? sw('autoLoad', 'Preencher e carregar mais', 'completa a busca e carrega ao chegar ao fim') : ''}
   <div class="lg"><span><b style="background:var(--us-pass)"></b>passa</span><span><b style="background:var(--us-fail)"></b>reprovado</span><span><b style="background:var(--us-unknown)"></b>sem dados</span></div>
 </div>`;
     document.documentElement.appendChild(host);
@@ -565,7 +792,9 @@ input[type=range]{width:100%;height:var(--us-target);margin:0;accent-color:var(-
   menu('Abrir ajustes do filtro', () => toggle(true));
   menu('Desligar/ligar neste site', () => { cfg.enabled = !cfg.enabled; save(); if (ui) ui.sync(); scan(); });
 
+  setInterval(() => { if (location.href !== seenHref) schedule(0, true); }, 500);
   addEventListener('popstate', () => schedule(0));
   addEventListener('resize', () => schedule(null, true));
+  addEventListener('scroll', () => aliLoader.scroll(), { passive: true });
   scan();
 })();

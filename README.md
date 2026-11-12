@@ -56,10 +56,27 @@ abre o **painel** (PC) ou a **gaveta** (celular, tela com menos de 600 px).
 | Patrocinado só se aprovado | sim | patrocinado reprovado ou sem nota some |
 | Mostrar nota e quantidade | sim | |
 | Abrir a página do item | sim | só AliExpress: reescreve links de combos/pacotes para `/item/<id>.html`; links sem id (loja, cupom, avaliações), botões (carrinho, favoritos), pedidos e checkout ficam intactos; link com `target="_blank"` abre em nova aba |
+| Preencher e carregar mais | sim | só buscas do AliExpress: completa o lote que a página deixou fora do DOM e carrega a próxima página ao chegar ao fim |
 
 Regras do veredito: nota ou contagem ausente não conta (ausente ≠ 0). Com as duas, reprova se
 qualquer uma ficar abaixo do mínimo; com uma só, decide por ela; sem nenhuma, fica cinza. Os ajustes
 valem **só para o site** em que foram feitos.
+
+Em buscas compatíveis do AliExpress, o filtro lê o lote completo entregue pela própria página e
+mostra os produtos ainda ausentes do DOM. Preenche a área visível e carrega páginas seguintes ao
+aproximar-se do fim, preservando consulta, ordenação e filtros. Só há uma requisição por vez, com
+intervalo mínimo de 1 segundo e timeout de 15 segundos. A continuação pausa após cinco páginas sem
+rolagem, três páginas sem novos produtos visíveis ou 500 produtos acumulados. **Continuar** retoma
+inclusive um lote parcialmente carregado e amplia o limite em mais 500 quando necessário.
+
+**Pausar** interrompe o carregamento; falhas exigem **Tentar novamente** e nunca são repetidas pela
+rolagem. Trocar a URL ou desligar o recurso cancela o trabalho anterior. Quando uma navegação SPA
+mantém os dados antigos, a continuação espera um novo lote embutido (recarregar a busca também
+resolve); não mistura os resultados. Layout, metadados ou CAPTCHA não reconhecidos preservam a
+paginação nativa. Os marcadores de anúncio precisam estar explícitos nos dados recebidos.
+
+A versão 1.1.0 tem testes offline de paginação e cancelamento; a validação visual final em página
+real está pendente porque o AliExpress apresentou CAPTCHA no ambiente de teste.
 
 Menu: **Abrir ajustes do filtro** · **Desligar/ligar neste site**.
 

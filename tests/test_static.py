@@ -36,7 +36,7 @@ def test_cabecalho(name):
     for k, v in m:
         d.setdefault(k, []).append(v)
     assert d["namespace"] == ["raschagas/userscripts"]
-    assert d["version"] == ["1.0.0"]
+    assert d["version"] == (["1.1.0"] if name == "shop-filter.user.js" else ["1.0.0"])
     assert d["downloadURL"] == [RAW.format(name)]
     assert d["updateURL"] == [RAW.format(name)]
     assert d["name"] and d["description"]
@@ -54,7 +54,13 @@ def test_cabecalho(name):
 def test_sem_rede_no_codigo():
     for name in SCRIPTS:
         code = (SRC / name).read_text(encoding="utf-8")
-        assert not re.search(r"\b(fetch|XMLHttpRequest|GM_xmlhttpRequest|sendBeacon|WebSocket)\s*\(", code), name
+        calls = re.findall(r"\b(fetch|XMLHttpRequest|GM_xmlhttpRequest|sendBeacon|WebSocket)\s*\(", code)
+        if name == "shop-filter.user.js":
+            assert calls == ["fetch"], calls
+            assert re.search(r"credentials\s*:\s*'same-origin'", code)
+            assert "redirect: 'error'" in code
+        else:
+            assert not calls, name
 
 
 DP = "dados-pessoais.user.js"
