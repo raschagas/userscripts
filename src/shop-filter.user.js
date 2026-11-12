@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Filtro de lojas — nota e vendas em cada anúncio
 // @namespace    raschagas/userscripts
-// @version      1.2.0
+// @version      1.2.1
 // @description  Marca cada anúncio com um círculo verde, vermelho ou cinza pela nota e pela quantidade de avaliações ou vendas, esmaece ou oculta os reprovados, some com patrocinados reprovados e corrige links de combos do AliExpress. Ajustes por site.
 // @match        https://*.aliexpress.com/*
 // @match        https://www.amazon.com.br/*
@@ -130,7 +130,13 @@
         for (const a of qsa('[class^="galleryItem--"] a[href*="/item/"], [class*=" galleryItem--"] a[href*="/item/"]')) {
           const g = a.closest('[class^="galleryItem--"], [class*=" galleryItem--"]'); if (seen.has(g)) continue; seen.add(g); if (!seen.has(a)) { seen.add(a); out.push(a); }
         }
-        return out;
+        // Deals HomePage and desktop/mobile Bundle Deals use separate card layouts.
+        // Require an item link and image so campaign banners and navigation stay out.
+        for (const c of qsa('a.productContainer[href*="/item/"], a[class*="prodContainer_"][href*="/item/"], a.nnCard[href*="/item/"]')) {
+          if (seen.has(c) || !c.querySelector('img') || !/\/item\/\d{6,}\.html/i.test(c.getAttribute('href'))) continue;
+          seen.add(c); out.push(c);
+        }
+        return outermost(out);
       },
       extract: c => {
         if (c.classList.contains('us-sf-load-card')) return {

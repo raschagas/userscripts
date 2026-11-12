@@ -82,6 +82,10 @@ paginação nativa. Os marcadores de anúncio precisam estar explícitos nos dad
 A versão 1.2.0 tem testes offline de paginação e cancelamento; a validação visual da continuação
 em página real não foi concluída porque o AliExpress apresentou CAPTCHA no ambiente de teste.
 
+A versão 1.2.1 também reconhece os cartões de SuperOfertas (`Deals-HomePage`) e Combos de ofertas
+(`BundleDeals2`), no PC e no celular. Reavalia os cartões que a própria página acrescenta ao rolar;
+a continuação por páginas numeradas permanece exclusiva das buscas.
+
 Menu: **Abrir ajustes do filtro** · **Desligar/ligar neste site**.
 
 | Site | Situação |
