@@ -9,6 +9,7 @@ from conftest import SRC
 from matchpattern import _match_one, metadata, runs_on
 
 SCRIPTS = sorted(p.name for p in SRC.glob("*.user.js"))
+MUSICA = "musica-links.user.js"
 RAW = "https://raw.githubusercontent.com/raschagas/userscripts/main/src/{}"
 VERSOES = {
     "makerworld-filter.user.js": "1.0.0",
@@ -20,6 +21,7 @@ VERSOES = {
     "cookies-aceitar.user.js": "1.1.0",
     "dados-pessoais.user.js": "2.1.0",
     "georritmo-links.user.js": "1.0.0",
+    "musica-links.user.js": "1.0.0",
     "shop-filter.user.js": "1.3.0",
     "unbloat.user.js": "1.0.0",
 }
@@ -53,8 +55,13 @@ def test_cabecalho(name):
     assert d["updateURL"] == [RAW.format(name)]
     assert d["name"] and d["description"]
     assert "require" not in d, "sem @require remoto"
-    assert set(d["grant"]) <= {"none", "GM_getValue", "GM_setValue", "GM_registerMenuCommand"}, d["grant"]
-    assert "connect" not in d, "sem privilégios de rede entre origens"
+    grants = {"none", "GM_getValue", "GM_setValue", "GM_registerMenuCommand"}
+    if name == MUSICA:  # única exceção: consulta só o MusicBrainz (MBID pela URL)
+        grants |= {"GM_xmlhttpRequest"}
+        assert d["connect"] == ["musicbrainz.org"], d["connect"]
+    else:
+        assert "connect" not in d, "sem privilégios de rede entre origens"
+    assert set(d["grant"]) <= grants, d["grant"]
     for k, v in m:  # comentário no fim da linha vira parte do valor
         assert "//" not in v or k in ("downloadURL", "updateURL", "match", "exclude", "namespace"), (k, v)
         if k in ("match", "exclude"):
@@ -67,7 +74,18 @@ def test_sem_rede_no_codigo():
     for name in SCRIPTS:
         code = (SRC / name).read_text(encoding="utf-8")
         calls = re.findall(r"\b(fetch|XMLHttpRequest|GM_xmlhttpRequest|sendBeacon|WebSocket)\s*\(", code)
-        if name == "shop-filter.user.js":
+        if name == MUSICA:
+            assert set(calls) == {"GM_xmlhttpRequest"}, calls
+            assert "method: 'GET'" in code and not re.search(r"method\s*:\s*['\"](?!GET)", code)
+            assert re.search(r"anonymous\s*:\s*true", code), "sem cookies para o MusicBrainz"
+            # Toda URL que chega ao GM_xmlhttpRequest (via mbGet/mbOne/gm) é do web service do MusicBrainz.
+            urls = re.findall(r"\b(?:mbGet|mbOne|gm)\(\s*([`'\"])(.*?)\1", code)
+            assert urls, "nenhuma chamada de rede encontrada"
+            assert all(u.startswith("https://musicbrainz.org/ws/2/") for _, u in urls), urls
+            # Chamadas com variável só nos repasses internos conhecidos.
+            dyn = re.findall(r"\b(?:mbGet|mbOne|gm)\(\s*([A-Za-z_$][\w$]*)", code)
+            assert set(dyn) <= {"url"}, dyn
+        elif name == "shop-filter.user.js":
             assert calls == ["fetch"], calls
             assert re.search(r"credentials\s*:\s*'same-origin'", code)
             assert "redirect: 'error'" in code
@@ -215,3 +233,18 @@ def test_unbloat_so_oculta():
     assert not re.search(r"\.(click|submit|requestSubmit|dispatchEvent)\s*\(", code)
     assert not re.search(r"\.value\s*=[^=]", code)
     assert "display:none!important" in code
+
+
+@pytest.mark.parametrize("url,expected", [
+    ("https://musicbrainz.org/release-group/11111111-2222-3333-4444-555555555555", True),
+    ("https://www.last.fm/music/Banda+Exemplo/Mar+de+Vidro", True),
+    ("https://open.spotify.com/album/0000000000000000000002", True),
+    ("https://bandaexemplo.bandcamp.com/album/mar-de-vidro", True),
+    ("https://rateyourmusic.com/release/album/x/y/", True),
+    ("https://www.albumoftheyear.org/album/1-x.php", True),
+    ("https://www.last.fm/user/alguem", False),
+    ("https://bandcamp.com/discover", False),
+    ("https://www.camara.leg.br/", False),
+])
+def test_musica_escopo(url, expected):
+    assert runs_on(meta_of(MUSICA), url) is expected
