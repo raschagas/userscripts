@@ -15,6 +15,7 @@ chegam sozinhas: o gerenciador compara `@version` com o `@updateURL`.
 | MakerWorld | modelos/criadores ocultos, filtros e carregamento nativo assistido (experimental) | [makerworld-filter.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/makerworld-filter.user.js) |
 | Dados pessoais | borra dados pessoais na tela (desligado por padrão) | [dados-pessoais.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/dados-pessoais.user.js) |
 | georritmo-links (links do homelab) | chip com Jellyfin, Seerr, Mealie e comparação de voos | [georritmo-links.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/georritmo-links.user.js) |
+| Música — pedir no Lidarr | em álbum/artista: leva à tela de adicionar do Lidarr já no item certo | [musica-links.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/musica-links.user.js) |
 | Cookies | aceita e fecha avisos de cookies/LGPD | [cookies-aceitar.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/cookies-aceitar.user.js) |
 | Unbloat — limpar sites | oculta Shorts, recomendações e banners no YouTube; banners de app, pop-ups e carrosséis nas lojas | [unbloat.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/unbloat.user.js) |
 
@@ -190,6 +191,39 @@ local também serve):
 
 O "×" esconde o chip na página atual. Menu: **Esconder o chip neste site** (desfazer: apague o host
 da chave `esconder`).
+
+## Música — pedir no Lidarr (`musica-links.user.js`)
+
+Em páginas de **álbum ou artista** do MusicBrainz, ListenBrainz, Last.fm, Rate Your Music, Spotify,
+Deezer, Discogs, Bandcamp, Album of the Year e Apple Music, um chip no canto inferior direito mostra
+(no Bandcamp, só em páginas de álbum; a página do artista lá é a loja e fica sem chip):
+
+| Botão | O que faz |
+|---|---|
+| + Lidarr | abre a tela nativa **Adicionar** do Lidarr já no item (`lidarr:<MBID>`, ou busca por nome); a edição e o monitoramento são escolhidos lá |
+| + artista | em páginas de álbum: abre o artista no Lidarr para escolher álbuns da discografia |
+| MusicBrainz | link cruzado para o release-group/artista (ou busca) |
+
+O script **não pede nada sozinho**: nunca chama a API do Lidarr nem guarda a chave dele; só abre páginas.
+Também não consulta o Navidrome nem outra biblioteca. Em sites com player fixo embaixo (Spotify, Deezer,
+ListenBrainz) o chip sobe para não cobri-lo.
+
+**Configuração por aparelho** (menu do gerenciador → nome do script → *Endereço do Lidarr*): padrão
+`https://lidarr.georritmo.com`; vazio = botão some.
+
+**O que vai à rede** (`GM_xmlhttpRequest`, só GET, `anonymous: true` = sem cookies): nas páginas sem MBID
+na própria URL (Spotify, Deezer, Last.fm, RYM, Discogs, Bandcamp, Apple), a URL da página vai ao
+[web service do MusicBrainz](https://musicbrainz.org/doc/MusicBrainz_API) (`/ws/2/url`, e `/ws/2/release` quando
+o link é de um release), que devolve o MBID. No Last.fm, num álbum, vai também a URL do artista, que é a que
+o MusicBrainz costuma ligar. Todas as consultas passam por uma fila só (no máximo 1 por segundo); o cache
+dura 30 dias e só guarda resultado completo (erro de rede não vai ao cache). Nada mais.
+
+Fontes conferidas: rota `/add/search?term=` e prefixos `lidarr:`/`mbid:` em
+[Lidarr v3.1.6.5079](https://github.com/Lidarr/Lidarr/blob/v3.1.6.5079/src/NzbDrone.Core/MetadataSource/SkyHook/SkyHookProxy.cs).
+Alternativas prontas avaliadas: [arrsearch](https://github.com/trossr32/sonarr-radarr-lidarr-autosearch-browser-extension)
+(busca por nome no Lidarr em MB/Last.fm/RYM) e [Lidarr for MusicBrainz](https://github.com/DanielWTE/lidarr-for-musicbrainz)
+(só musicbrainz.org, adiciona por API). RYM e AOTY bloqueiam navegador automatizado (Cloudflare): a leitura
+deles é testada em fixture.
 
 ## Cookies (`cookies-aceitar.user.js`)
 
