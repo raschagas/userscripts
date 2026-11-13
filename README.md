@@ -108,7 +108,7 @@ Menu: **Abrir ajustes do filtro** · **Desligar/ligar neste site**.
 
 ## Dados pessoais (`dados-pessoais.user.js`)
 
-Versão 2.0.0. Um só script, com um adaptador por app sobre o mesmo motor (mesmo atalho, mesmo
+Versão 2.1.0. Um só script, com um adaptador por app sobre o mesmo motor (mesmo atalho, mesmo
 estado). Desenha caixas com desfoque **por cima** da página — não altera nem envolve o texto, então
 funciona em apps reativos. Não borra campos editáveis (a caixa de escrever fica intocada) nem `svg`,
 respeita painéis com rolagem e o que está coberto por menus. Na dúvida, borra a mais: deixar escapar é
@@ -123,8 +123,9 @@ pior.
   semana, cargos ("Deputado Fulano Silva" → só o nome), órgãos e lugares ("Câmara dos Deputados",
   "São Paulo"), menus e produtos. Nomes em MAIÚSCULAS, "Sobrenome, Prenome" e "Prenome S." usam a
   lista dos 4.000 prenomes mais frequentes do Censo 2010 do IBGE (via Brasil.IO, `genero-nomes`).
-- **Fotos de perfil nunca são borradas** (nem as iniciais no lugar da foto). Só QR codes (ex.: tela
-  de login do WhatsApp) e miniaturas de anexo com nome sensível.
+- **Fotos de perfil ficam nítidas por padrão** (e as iniciais no lugar da foto também). Quem quiser
+  liga **Borrar fotos de perfil** nos ajustes. QR codes (ex.: tela de login do WhatsApp) e miniaturas
+  de anexo com nome sensível são sempre borrados.
 
 **Mensageiros** (WhatsApp Web, Telegram Web `/k` e `/a`, Chatwoot):
 
@@ -133,6 +134,9 @@ pior.
 - borra a prévia das mensagens na lista lateral;
 - **não** borra quem enviou, nem dentro da conversa nem na lateral: o prefixo "Fulano:" da prévia
   fica legível; só o texto depois dele é borrado. Hora e contador de não lidas também ficam.
+- O borrão padrão nos mensageiros é **leve (3 px)**; nos outros sites, 6 px. Os ajustes trocam o que
+  é borrado na lista: **nome e prévia** (padrão), **só a prévia** ou **só dados** (telefone, e-mail,
+  CPF, valores…).
 - O Chatwoot é auto-hospedado: o script o reconhece pela estrutura (rota `/app/accounts/<n>/` ou
   componentes do painel), não pelo endereço. Inclua o host do seu Chatwoot como regra `@match`
   pessoal ([Sites extras por aparelho](#sites-extras-por-aparelho)); `app.chatwoot.com` já está
@@ -153,7 +157,12 @@ extrato, boleto…).
   `canto_selo` no gerenciador (`inferior-esquerdo`, padrão; `inferior-direito`, `superior-esquerdo`,
   `superior-direito`).
 - Passar o mouse sobre uma caixa revela só aquele item.
-- Menu: **Ligar/desligar (Alt+Shift+P)** · **Nomes extras a borrar…** (lista separada por vírgula,
+- **Ajustes** (engrenagem ao lado do selo, ou **Ajustes do borrão…** no menu; no celular abre como
+  gaveta inferior): o que borrar na lista de conversas, a intensidade (1 a 10 px) e **Borrar fotos de
+  perfil** (desligado por padrão). Ficam salvos **por site**.
+
+  ![Painel de ajustes no WhatsApp, página de teste com dados fictícios](docs/screenshots/dados-pessoais-ajustes-fixture.png)
+- Menu: **Ligar/desligar (Alt+Shift+P)** · **Ajustes do borrão…** · **Nomes extras a borrar…** (lista separada por vírgula,
   ex.: `Fulano, Siqueira`; cada nome vale sozinho, sem sobrenome) · **Nunca neste site** /
   **Voltar a borrar neste site**.
 - Roda **só** em: Gmail, Google Contatos, Outlook pessoal (`outlook.live.com`), Outlook Web do

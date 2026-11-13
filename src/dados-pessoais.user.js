@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dados pessoais — borrar na tela
 // @namespace    raschagas/userscripts
-// @version      2.0.0
+// @version      2.1.0
 // @description  Borra nomes, documentos (CPF, RG, CNH, título, PIS, passaporte), telefones, e-mails, endereços, placas, Pix, boletos, valores, contas e anexos sensíveis na tela; nos mensageiros borra o nome das conversas, os telefones e as prévias, deixando legível quem enviou. Começa desligado; Alt+Shift+P liga e desliga. Não altera a página: desenha o borrão por cima.
 // @match        https://mail.google.com/*
 // @match        https://contacts.google.com/*
@@ -381,7 +381,10 @@
   // Foto de perfil e iniciais no lugar da foto: nunca borradas (decisão do dono). Só elementos com até
   // 3 letras (as iniciais): um contêiner com "avatar" na classe que envolva a linha inteira não conta.
   const AVATAR = '[class*="avatar" i],[class*="Avatar"],[data-testid*="avatar" i],[data-tid*="avatar" i]';
-  const QR = 'canvas[aria-label*="QR" i],img[alt*="QR" i],[data-ref] canvas,[aria-label*="QR" i] canvas,[aria-label*="QR" i] img,[class*="qr" i] canvas,[class*="qr" i] img,[class*="qr" i]>svg';
+  const QR = 'canvas[aria-label*="QR" i],img[alt*="QR" i],[data-ref] canvas,[aria-label*="QR" i] canvas,[aria-label*="QR" i] img,' +
+    // Por classe só com separador ou a palavra inteira: classe atômica ofuscada ("x1qrby5") não é QR code.
+    ['[class~="qr" i]', '[class*="qr-" i]', '[class*="-qr" i]', '[class*="qr_" i]', '[class*="_qr" i]', '[class*="qrcode" i]']
+      .map(c => `${c} canvas,${c} img,${c}>svg`).join(',');
   // Remetente dentro da prévia: elemento seguido de ":" ("<b>Fulano</b>: oi").
   function senderOf(p, sel) {
     const s = sel && p.querySelector(sel);
@@ -460,10 +463,11 @@
       '[data-tid*="display-name" i]', '[data-tid*="displayName"]', '[data-tid="calling-participant-name"]',
       '[data-tid="people-picker-selected-user"]'].join(','), 'P');
   }
+  // list (mensageiros): a lista de conversas, onde valem os modos "Só a prévia" e "Só dados".
   const ADAPTERS = [
-    { id: 'whatsapp', chat: true, test: () => location.hostname === 'web.whatsapp.com', mark: markWhatsApp },
-    { id: 'telegram', chat: true, test: () => location.hostname === 'web.telegram.org', mark: markTelegram },
-    { id: 'chatwoot', chat: true, test: isChatwoot, mark: markChatwoot },
+    { id: 'whatsapp', chat: true, list: '#pane-side', test: () => location.hostname === 'web.whatsapp.com', mark: markWhatsApp },
+    { id: 'telegram', chat: true, list: '.chatlist-chat, .chat-list .ListItem, .ListItem.Chat', test: () => location.hostname === 'web.telegram.org', mark: markTelegram },
+    { id: 'chatwoot', chat: true, list: '.conversations-list, .conversation-card', test: isChatwoot, mark: markChatwoot },
     { id: 'outlook', test: () => /^outlook\.|\.outlook\./.test(location.hostname) || /^\/owa(?:\/|$)/i.test(location.pathname), mark: markOutlook },
     { id: 'teams', test: () => /^teams\./.test(location.hostname), mark: markTeams },
     { id: 'geral', test: () => true, mark: () => {} },
@@ -475,21 +479,67 @@
 
   // ---------- varredura ----------
   const HARD = /^(SCRIPT|STYLE|NOSCRIPT|TEXTAREA|INPUT|SELECT|OPTION|SVG|CANVAS|IFRAME|TEMPLATE)$/i;
-  const EDIT = '[contenteditable=""],[contenteditable="true"],[contenteditable="plaintext-only"],[role="textbox"],[role="searchbox"],#pv-layer,#pv-badge';
+  const EDIT = '[contenteditable=""],[contenteditable="true"],[contenteditable="plaintext-only"],[role="textbox"],[role="searchbox"],#pv-layer,#pv-ctl,#pv-badge,#pv-gear,#pv-panel';
   const isHard = e => HARD.test(e.nodeName) || e.matches(EDIT);
 
+  // ---------- ajustes por site ----------
+  // modo (só mensageiros): tudo = nome da conversa e prévia · previa = só a prévia · padroes = só dados (telefone, CPF…).
+  const MODOS = [['tudo', 'Nome e prévia'], ['previa', 'Só a prévia'], ['padroes', 'Só dados (telefone, CPF…)']];
+  // Adaptador atual: revisto a cada varredura (num SPA o Chatwoot pode aparecer depois do carregamento).
+  let AD = ADAPTERS[ADAPTERS.length - 1];
+  const resolveAd = () => (AD = ADAPTERS.find(a => a.test()));
+  // Nos mensageiros o borrão padrão é leve (3 px): cobre a lista inteira sem pesar na tela.
+  const DEF = () => ({ modo: 'tudo', forca: AD.chat ? 3 : 6, fotos: false });
+  const siteKey = () => AD.id === 'geral' ? location.hostname : AD.id;
+  const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+  function cfg() {
+    const all = get('ajustes', {}), d = DEF();
+    const c = isObj(all) && isObj(all[siteKey()]) ? all[siteKey()] : {};
+    const f = typeof c.forca === 'number' ? c.forca : NaN;
+    return { modo: MODOS.some(m => m[0] === c.modo) ? c.modo : d.modo,
+      forca: f >= 1 && f <= 10 ? Math.round(f) : d.forca, fotos: typeof c.fotos === 'boolean' ? c.fotos : d.fotos };
+  }
+  function setCfg(k, v) {
+    const all = get('ajustes', {}), o = isObj(all) ? all : {}, key = siteKey();
+    set('ajustes', Object.assign({}, o, { [key]: Object.assign({}, isObj(o[key]) ? o[key] : {}, { [k]: v }) }));
+  }
+  // Foto de perfil: imagem pequena, quadrada e redonda (nela ou num invólucro do mesmo tamanho).
+  function isPhoto(e) {
+    if (e.nodeName !== 'IMG') return false;
+    const r = e.getBoundingClientRect();
+    if (r.width < 20 || r.width > 128 || Math.abs(r.width - r.height) > 4) return false;
+    for (let c = e, i = 0; c && i < 3; c = c.parentElement, i++) {
+      if (i && c.getBoundingClientRect().width > r.width * 1.5) break;
+      // O estilo computado mantém a unidade declarada: "50%" continua em %, o resto vem em px.
+      const br = getComputedStyle(c).borderTopLeftRadius, v = parseFloat(br) || 0;
+      if (br.endsWith('%') ? v >= 40 : v >= r.width * 0.4) return true;
+    }
+    return false;
+  }
+
   // ---------- estado ----------
-  let on = false, ranges = [], els = [], obs = null, layer = null, badge = null, raf = 0, timer = 0, firstDirty = 0, hoverIdx = -1, painted = [];
+  let on = false, ranges = [], els = [], obs = null, layer = null, ctl = null, badge = null, gear = null, panel = null, blurAd = null,
+    raf = 0, timer = 0, firstDirty = 0, hoverIdx = -1, painted = [];
+  const ours = n => !!n && [layer, ctl, panel].some(x => x && x.contains(n));
   const excluded = () => !!location.hostname && (get('excluir', '') || '').split(',').filter(Boolean).includes(location.hostname);
 
   function collect() {
     const t0 = performance.now(), out = [], boxes = new Set(), fileHosts = [];
     const root = document.body || document.documentElement;
     flags = new Map();
-    const ad = ADAPTERS.find(a => a.test());
+    const ad = resolveAd(), conf = cfg();
+    if (ad !== blurAd && layer) { // adaptador novo (ou primeira varredura): intensidade e painel seguem o adaptador
+      const changed = blurAd !== null; blurAd = ad;
+      layer.style.setProperty('--pv-blur', conf.forca + 'px');
+      if (changed && panel) { closePanel(false); openPanel(); }
+    }
     for (const e of document.querySelectorAll(PERSON)) if (e.nodeName !== 'IMG') flags.set(e, 'P');
     try { ad.mark(); for (const e of document.querySelectorAll(AVATAR)) if (e.textContent.trim().length <= 3) flags.set(e, 'K'); } catch (_) { /* seletor que o navegador não aceita: segue só com o motor geral */ }
-    if (!ad.chat) for (const [e, k] of flags) if (k === 'P') personNames(e);
+    if (!ad.chat) { for (const [e, k] of flags) if (k === 'P') personNames(e); }
+    // Modos só na lista de conversas: B (borra tudo) e, em "Só dados", V (prévia) viram K, que só borra padrões.
+    else if (conf.modo !== 'tudo') {
+      for (const [e, k] of flags) if ((k === 'B' || (k === 'V' && conf.modo === 'padroes')) && e.closest(ad.list)) flags.set(e, 'K');
+    }
     const drx = getDictRx();
     // Dono da marca mais próxima de cada elemento (memorizado por varredura).
     const memo = new Map(), vSeen = new Set();
@@ -544,19 +594,28 @@
       let end = -1;
       for (const [a, b] of hits) { if (a < end) { end = Math.max(end, b); continue; } range(t, a, b); end = b; }
     }
-    // Caixas inteiras: QR code e miniatura de anexo sensível. Fotos de perfil nunca.
+    // Caixas inteiras: QR code e miniatura de anexo sensível (sempre, mesmo redonda).
     for (const e of document.querySelectorAll(QR)) boxes.add(e);
     for (const e of document.querySelectorAll('img[alt],img[title],img[aria-label]')) {
       FILE_RX.lastIndex = 0;
       if (FILE_RX.test(e.alt || e.title || e.getAttribute('aria-label') || '')) boxes.add(e);
     }
+    // Miniaturas em volta do nome de arquivo sensível. A foto de perfil (redonda) só fica de fora quando é
+    // reconhecível: há outra miniatura não redonda no mesmo grupo (o anexo de verdade), ou ela está num
+    // avatar marcado ou na lista de conversas. Senão, na dúvida, é borrada.
     for (const h of fileHosts) {
       let c = h;
       for (let i = 0; i < 4 && c && c !== root; i++, c = c.parentElement) {
-        const th = c.querySelectorAll('img,canvas');
-        if (th.length) { if (th.length <= 3) th.forEach(x => boxes.add(x)); break; }
+        const th = [...c.querySelectorAll('img,canvas')];
+        if (!th.length) continue;
+        if (th.length <= 3) {
+          const photo = th.map(isPhoto), other = photo.some(p => !p);
+          th.forEach((x, j) => { if (!photo[j] || !(other || x.closest(AVATAR) || (ad.list && x.closest(ad.list)))) boxes.add(x); });
+        }
+        break;
       }
     }
+    if (conf.fotos) for (const e of document.querySelectorAll('img')) if (isPhoto(e)) boxes.add(e);
     ranges = out; els = [...boxes];
     if (layer) { layer.dataset.scanMs = (performance.now() - t0).toFixed(1); layer.dataset.app = ad.id; }
   }
@@ -596,9 +655,9 @@
       }
       const l = Math.max(rect.left, c.l), t = Math.max(rect.top, c.t), r = Math.min(rect.right, c.r), b = Math.min(rect.bottom, c.b);
       if (r - l < 2 || b - t < 2) return;
-      // Coberto por outro elemento (modal, menu)? Confere o ponto central da parte visível. O selo não conta.
+      // Coberto por outro elemento (modal, menu)? Confere o ponto central da parte visível. O selo, a engrenagem e o painel não contam.
       const hit = document.elementFromPoint((l + r) / 2, (t + b) / 2);
-      if (!hit || !(hit === host || host.contains(hit) || (badge && badge.contains(hit)))) return;
+      if (!hit || !(hit === host || host.contains(hit) || ours(hit))) return;
       boxes.push([{ left: l, top: t, width: r - l, height: b - t }, String(key)]);
     };
     ranges.forEach((r, i) => { if (r.startContainer.isConnected) for (const rc of r.getClientRects()) add(rc, i, r.startContainer); });
@@ -629,27 +688,106 @@
   // (inferior-esquerdo por padrão; também inferior-direito, superior-esquerdo, superior-direito).
   const CORNERS = { 'inferior-esquerdo': 'left:8px;bottom:8px', 'inferior-direito': 'right:8px;bottom:8px',
     'superior-esquerdo': 'left:8px;top:8px', 'superior-direito': 'right:8px;top:8px' };
+  // O painel abre acima da área de toque da engrenagem (44 px a partir do selo).
+  const PANEL_POS = { 'inferior-esquerdo': 'left:8px;bottom:56px', 'inferior-direito': 'right:8px;bottom:56px',
+    'superior-esquerdo': 'left:8px;top:56px', 'superior-direito': 'right:8px;top:56px' };
+  // Painel de ajustes (gaveta inferior no celular). Tudo salvo por site.
+  function onPanelKey(e) {
+    if (e.key !== 'Escape' || !panel) return;
+    e.preventDefault(); e.stopPropagation(); closePanel(true);
+  }
+  function closePanel(refocus) {
+    if (!panel) return;
+    removeEventListener('keydown', onPanelKey, true);
+    panel.remove(); panel = null;
+    if (refocus && gear && gear.isConnected) gear.focus();
+  }
+  function openPanel() {
+    if (!on || panel) return;
+    const c = cfg(), el = (tag, props, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
+    const apply = (k, v) => { setCfg(k, v); layer.style.setProperty('--pv-blur', cfg().forca + 'px'); collect(); schedule(); };
+    panel = el('div', { id: 'pv-panel' });
+    panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-label', 'Ajustes do borrão');
+    const x = el('button', { className: 'x', type: 'button', textContent: '×', title: 'Fechar' });
+    x.setAttribute('aria-label', 'Fechar'); x.addEventListener('click', () => closePanel(true));
+    panel.append(el('h2', {}, 'Dados pessoais', x));
+    if (AD.chat) {
+      panel.append(el('h3', {}, 'Na lista de conversas, borrar'));
+      for (const [id, text] of MODOS) {
+        const r = el('input', { type: 'radio', name: 'pv-modo', value: id, checked: c.modo === id });
+        r.addEventListener('change', () => apply('modo', id));
+        panel.append(el('label', {}, r, text));
+      }
+    }
+    const out = el('output', { textContent: c.forca + ' px' });
+    const rg = el('input', { type: 'range', min: 1, max: 10, step: 1, value: c.forca });
+    rg.setAttribute('aria-label', 'Intensidade do borrão');
+    // Arrastando: só o texto e a camada; salva e revarre ao soltar.
+    rg.addEventListener('input', () => { out.textContent = rg.value + ' px'; layer.style.setProperty('--pv-blur', rg.value + 'px'); });
+    rg.addEventListener('change', () => apply('forca', +rg.value));
+    panel.append(el('h3', {}, 'Intensidade do borrão'), el('label', {}, rg, out));
+    const ck = el('input', { type: 'checkbox', checked: c.fotos });
+    ck.addEventListener('change', () => apply('fotos', ck.checked));
+    panel.append(el('label', { className: 'tg' }, 'Borrar fotos de perfil', ck),
+      el('p', {}, 'Passe o mouse para revelar. Alt+Shift+P liga e desliga.'));
+    document.documentElement.append(panel);
+    addEventListener('keydown', onPanelKey, true);
+    panel.querySelector('input').focus();
+  }
   function enable() {
     if (on || excluded()) return; on = true;
+    const corner = CORNERS[get('canto_selo', '')] ? get('canto_selo', '') : 'inferior-esquerdo';
+    const right = corner.endsWith('direito'), top = corner.startsWith('superior');
     layer = document.createElement('div'); layer.id = 'pv-layer';
     const st = document.createElement('style'); st.id = 'pv-style';
     st.textContent = `#pv-layer{position:fixed;inset:0;pointer-events:none;z-index:var(--us-z,2147483646)}
-      #pv-layer>div{position:fixed;border-radius:4px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);background:rgba(127,127,127,.08);transition:opacity .1s}
+      #pv-layer>div{position:fixed;border-radius:4px;backdrop-filter:blur(var(--pv-blur,6px));-webkit-backdrop-filter:blur(var(--pv-blur,6px));background:rgba(127,127,127,.08);transition:opacity .1s}
       #pv-layer>div.rv{opacity:0}
-      #pv-badge{position:fixed;${CORNERS[get('canto_selo', '')] || CORNERS['inferior-esquerdo']};z-index:2147483647;min-height:24px;box-sizing:border-box;
+      #pv-ctl{position:fixed;${CORNERS[corner]};z-index:2147483647;display:flex;flex-direction:${right ? 'row-reverse' : 'row'};
+        align-items:${top ? 'flex-start' : 'flex-end'};gap:2px;pointer-events:none}
+      #pv-badge{min-height:24px;box-sizing:border-box;
         display:flex;align-items:center;padding:2px 10px;border-radius:999px;background:rgba(17,24,39,.85);color:#f9fafb;
         font:600 12px/1 system-ui,"Segoe UI",Roboto,sans-serif;cursor:pointer;user-select:none;pointer-events:auto;
         box-shadow:0 2px 8px rgba(0,0,0,.25);opacity:.9}
       #pv-badge:hover{opacity:1}
+      #pv-gear{all:unset;box-sizing:border-box;width:44px;height:44px;display:flex;justify-content:center;align-items:${top ? 'flex-start' : 'flex-end'};
+        cursor:pointer;pointer-events:auto}
+      #pv-gear>span{width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:999px;
+        background:rgba(17,24,39,.85);color:#f9fafb;font:13px/1 system-ui,"Segoe UI",Roboto,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.25);opacity:.9}
+      #pv-gear:hover>span{opacity:1}
+      #pv-gear:focus-visible>span,#pv-badge:focus-visible{outline:2px solid #93c5fd;outline-offset:1px}
+      #pv-panel{position:fixed;${PANEL_POS[corner]};z-index:2147483647;width:288px;max-width:calc(100vw - 16px);box-sizing:border-box;
+        padding:14px 16px;border-radius:14px;background:#fff;color:#111827;border:1px solid #e5e7eb;box-shadow:0 10px 30px rgba(0,0,0,.22);
+        font:400 14px/1.35 system-ui,"Segoe UI",Roboto,sans-serif;pointer-events:auto}
+      #pv-panel *{box-sizing:border-box;font:inherit;color:inherit}
+      #pv-panel h2{margin:0 0 10px;font-size:15px;font-weight:700;display:flex;justify-content:space-between;align-items:center}
+      #pv-panel h3{margin:12px 0 4px;font-size:12px;font-weight:600;color:#4b5563;text-transform:none}
+      #pv-panel label{display:flex;align-items:center;gap:10px;min-height:44px;cursor:pointer}
+      #pv-panel label.tg{justify-content:space-between}
+      #pv-panel input[type=radio],#pv-panel input[type=checkbox]{width:20px;height:20px;margin:0;accent-color:#2563eb;flex:none}
+      #pv-panel input[type=range]{flex:1;min-height:44px;margin:0;accent-color:#2563eb}
+      #pv-panel output{min-width:44px;text-align:right;font-variant-numeric:tabular-nums}
+      #pv-panel .x{all:unset;min-width:44px;min-height:44px;margin:-12px -14px -12px 0;text-align:center;cursor:pointer;font-size:18px;color:#4b5563}
+      #pv-panel p{margin:8px 0 0;font-size:12px;color:#4b5563}
+      @media (prefers-color-scheme: dark){#pv-panel{background:#1f2937;color:#f9fafb;border-color:#374151}
+        #pv-panel h3,#pv-panel p,#pv-panel .x{color:#d1d5db}#pv-panel input{accent-color:#60a5fa}}
+      @media (max-width:600px){#pv-panel{left:0;right:0;top:auto;bottom:0;width:auto;max-width:none;border-radius:16px 16px 0 0;padding-bottom:20px}}
       @media (prefers-reduced-motion: reduce){#pv-layer>div{transition:none}}`;
+    // Selo e engrenagem lado a lado, irmãos num contêiner que não recebe clique (só eles recebem).
+    ctl = document.createElement('div'); ctl.id = 'pv-ctl';
     badge = document.createElement('div'); badge.id = 'pv-badge'; badge.textContent = '🔒 borrando';
     badge.setAttribute('role', 'button'); badge.tabIndex = 0;
     badge.title = 'Dados pessoais: clique para desligar (Alt+Shift+P)';
     badge.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); toggle(); });
     badge.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
-    document.documentElement.append(st, layer, badge);
+    gear = document.createElement('button'); gear.id = 'pv-gear'; gear.type = 'button';
+    const ico = document.createElement('span'); ico.textContent = '⚙'; ico.setAttribute('aria-hidden', 'true'); gear.append(ico);
+    gear.title = 'Ajustes do borrão'; gear.setAttribute('aria-label', 'Ajustes do borrão');
+    gear.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); panel ? closePanel(true) : openPanel(); });
+    ctl.append(badge, gear);
+    document.documentElement.append(st, layer, ctl);
     collect(); schedule();
-    obs = new MutationObserver(muts => { if (muts.some(m => !layer.contains(m.target) && !badge.contains(m.target))) rescan(); });
+    obs = new MutationObserver(muts => { if (muts.some(m => !ours(m.target))) rescan(); });
     // No <html>: sobrevive à troca do <body> por apps que remontam a página.
     obs.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
     addEventListener('scroll', schedule, { capture: true, passive: true });
@@ -660,7 +798,7 @@
     if (!on) return; on = false;
     obs && obs.disconnect(); obs = null; clearTimeout(timer); timer = 0; firstDirty = 0; painted = [];
     removeEventListener('scroll', schedule, { capture: true }); removeEventListener('resize', schedule); removeEventListener('mousemove', onMove);
-    layer && layer.remove(); badge && badge.remove(); badge = null;
+    closePanel(false); layer && layer.remove(); ctl && ctl.remove(); layer = ctl = badge = gear = blurAd = null;
     document.getElementById('pv-style')?.remove(); ranges = []; els = [];
   }
   function toggle() { on ? disable() : enable(); set('ligado', on); }
@@ -668,6 +806,8 @@
   addEventListener('keydown', e => { if (e.altKey && e.shiftKey && e.code === 'KeyP') { e.preventDefault(); toggle(); } }, true);
   try {
     GM_registerMenuCommand('Ligar/desligar (Alt+Shift+P)', toggle);
+    // Pelo menu: liga como o atalho (e lembra), depois abre. Em site excluído não faz nada.
+    GM_registerMenuCommand('Ajustes do borrão…', () => { if (excluded()) return; if (!on) toggle(); openPanel(); });
     GM_registerMenuCommand('Nomes extras a borrar…', () => {
       const v = prompt('Nomes separados por vírgula (ex.: Fulano, Siqueira). Valem sozinhos, sem sobrenome:', get('nomes', ''));
       if (v !== null) { set('nomes', v); location.reload(); }
