@@ -18,6 +18,7 @@ chegam sozinhas: o gerenciador compara `@version` com o `@updateURL`.
 | Música — pedir no Lidarr | em álbum/artista: leva à tela de adicionar do Lidarr já no item certo | [musica-links.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/musica-links.user.js) |
 | Cookies | aceita e fecha avisos de cookies/LGPD | [cookies-aceitar.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/cookies-aceitar.user.js) |
 | Unbloat — limpar sites | oculta Shorts, recomendações e banners no YouTube; banners de app, pop-ups e carrosséis nas lojas | [unbloat.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/unbloat.user.js) |
+| Navidrome — letras | faz o botão de letra nativo do player web do Navidrome mostrar também letras `.lrc`/`.yml` ao lado da música; `@match` só `music.georritmo.com` (o endereço da rede local entra pela [regra por aparelho](#sites-extras-por-aparelho)); notas em [docs/navidrome-letras.md](docs/navidrome-letras.md) | [navidrome-letras.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/navidrome-letras.user.js) |
 
 Os ajustes ficam no próprio gerenciador, por dispositivo (`GM_getValue`). Para ver ou editar à mão:
 Violentmonkey → script → aba **Valores**; Tampermonkey → script → **Armazenamento**.

@@ -22,6 +22,7 @@ VERSOES = {
     "dados-pessoais.user.js": "2.1.0",
     "georritmo-links.user.js": "1.0.0",
     "musica-links.user.js": "1.0.0",
+    "navidrome-letras.user.js": "1.0.1",
     "shop-filter.user.js": "1.3.0",
     "unbloat.user.js": "1.0.0",
 }
@@ -85,6 +86,13 @@ def test_sem_rede_no_codigo():
             # Chamadas com variável só nos repasses internos conhecidos.
             dyn = re.findall(r"\b(?:mbGet|mbOne|gm)\(\s*([A-Za-z_$][\w$]*)", code)
             assert set(dyn) <= {"url"}, dyn
+        elif name == "navidrome-letras.user.js":
+            # Só a própria origem: envolve o fetch da página e pede getLyricsBySongId com caminho relativo.
+            assert not calls, calls
+            assert re.findall(r"ORIG\.call\(window, `([^`?]*)", code) == ["/rest/getLyricsBySongId"]
+            assert re.search(r"credentials\s*:\s*'same-origin'", code)
+            assert "redirect: 'error'" in code
+            assert "url.origin !== location.origin" in code and "method !== 'GET'" in code
         elif name == "shop-filter.user.js":
             assert calls == ["fetch"], calls
             assert re.search(r"credentials\s*:\s*'same-origin'", code)
