@@ -18,6 +18,7 @@ chegam sozinhas: o gerenciador compara `@version` com o `@updateURL`.
 | Música — pedir no Lidarr | em álbum/artista: leva à tela de adicionar do Lidarr já no item certo | [musica-links.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/musica-links.user.js) |
 | Cookies | aceita e fecha avisos de cookies/LGPD | [cookies-aceitar.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/cookies-aceitar.user.js) |
 | Unbloat — limpar sites | oculta Shorts, recomendações e banners no YouTube; banners de app, pop-ups e carrosséis nas lojas | [unbloat.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/unbloat.user.js) |
+| Instagram — vídeo e feed | barra de progresso em Reels, Stories e vídeos do feed, atalhos, volume lembrado; oculta sugestões, patrocinados e banner do app | [instagram-ux.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/instagram-ux.user.js) |
 | Navidrome — letras | faz o botão de letra nativo do player web do Navidrome mostrar também letras `.lrc`/`.yml` ao lado da música; `@match` só `music.georritmo.com` (o endereço da rede local entra pela [regra por aparelho](#sites-extras-por-aparelho)); notas em [docs/navidrome-letras.md](docs/navidrome-letras.md) | [navidrome-letras.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/navidrome-letras.user.js) |
 
 Os ajustes ficam no próprio gerenciador, por dispositivo (`GM_getValue`). Para ver ou editar à mão:
@@ -312,6 +313,37 @@ acrescentado por regra extra do gerenciador.
 Valores no gerenciador: `regras` (por site e regra, `true` = ocultar) e `desligado` (hosts separados
 por vírgula).
 
+## Instagram — vídeo e feed (`instagram-ux.user.js`)
+
+Versão 1.0.0, só em `https://www.instagram.com/*`. Sempre ligado, sem elementos novos na página; ajustes no menu do gerenciador.
+Não acrescenta nenhum elemento (só um estilo), nem selos, botões ou pílulas. Tudo se ajusta pelo menu do gerenciador (`✓`/`✗`, salvo no valor
+`ajustes`). Reels e Stories continuam lá; nada é clicado nem removido do DOM.
+
+| Função (menu) | Padrão | O que faz |
+|---|---|---|
+| Barra de progresso nos vídeos | ligada | Reels, Stories e vídeos do feed usam os controles nativos do navegador. Só a faixa inferior (~48 px) da camada que o Instagram põe por cima do vídeo é liberada, e ali a barra nativa aparece e recebe clique/arrasto; o resto do vídeo continua com os toques do Instagram (pausar, avançar Story). Controles do Instagram dentro da faixa (botão de som, música/legenda do Reel, campo de resposta do Story) continuam visíveis e tocáveis: a faixa encolhe para o lado livre ou, sem lado largo o bastante, não é liberada naquele vídeo. Vídeo cortado pela borda inferior da tela fica sem faixa até caber. Desligar devolve `controls`, PiP e `controlsList` ao que eram. Ocultos: tela cheia, menu ⋮, legendas e o botão de play central; ficam tempo, play, mudo e volume |
+| Atalhos | ligados | ←/→ ±5 s, `,`/`.` velocidade −/+0,25× (0,25× a 3×), `M` mudo. Com um diálogo aberto (Story, post) valem só para o vídeo dele: num post de foto aberto não fazem nada e a tecla segue para o Instagram; sem diálogo, o vídeo mais visível. Num Story de vídeo, ←/→ buscam dentro do vídeo (não trocam de Story). Ignorados em campos de texto |
+| Lembrar volume e mudo | ligado | grava volume/mudo quando **você** muda (valor `som`) e aplica a cada vídeo novo, uma vez; sem gesto na página não tira o mudo (o navegador pausaria o autoplay) |
+| Ocultar "Sugestões para você" | ligado | blocos de sugestões no feed e na lateral, e posts "Sugerido para você" |
+| Ocultar patrocinados | ligado | posts (`article`) com o rótulo exato "Patrocinado"/"Sponsored" no cabeçalho, perto do autor (antes da mídia); na legenda não conta, e nada dentro de um diálogo é ocultado. Marcas são reavaliadas quando o post é reciclado e a cada troca de página |
+| Ocultar banner "abrir no app" | ligado | faixa fixa "Abrir app"; no cabeçalho do celular, só o botão "Abrir aplicativo" |
+| Abrir direto em Seguindo | desligado | `/` vira `/?variant=following` (também ao voltar para o início sem recarregar); no máximo uma vez a cada 10 s por aba, e nunca logo depois de sair da página que o próprio script abriu (sem laço se o Instagram tirar o `variant`) |
+
+Detecção por estrutura, `aria`/`role` e texto exato, nunca por classes geradas; o que é encontrado
+recebe um atributo `data-us-ig-*` e some por CSS. Um `MutationObserver` com debounce (100 ms depois da última
+mudança, no máximo 500 ms depois da primeira) + quadro de animação reage a vídeos e posts novos, e a troca de página sem recarregar é percebida pela
+Navigation API, `popstate` e `history.pushState` (sem polling). O script não anima nada.
+
+Conferido em página real (2026-11-17, deslogado, Reel público de conta institucional, PC 1366×768 e
+celular 412×915): a faixa inferior chega ao vídeo e a barra nativa avança/volta pelo clique e pelo
+toque. Stories, feed, sugestões e patrocinados exigem login: validados só em
+fixture (`tests/fixtures/instagram-*.html`), falta conferir no navegador do dono.
+
+Limites conhecidos: onde um controle do Instagram ocupa a faixa toda (campo de resposta do Story no
+celular), aquele vídeo fica sem barra nativa (há os atalhos); no celular logado, se a barra de navegação inferior
+cobrir o fim do vídeo, ela não é recortada e pode esconder a barra nativa. O interstício "Assista a este reel no app" do
+celular deslogado não é tocado (pede clique).
+
 ---
 
 ## Testes
@@ -345,6 +377,17 @@ python3 smoke_real.py         # páginas reais (rede); resumo em docs/screenshot
   nada é clicado; menu alterna ao vivo e persiste; desligar no site remove o estilo; página de Shorts
   e navegação sem recarregar do YouTube; rolagem devolvida no Mercado Livre; verificação de robô do
   AliExpress intacta; nada na Câmara nem fora dos sites.
+- `test_instagram_ux.py`: barra de progresso (controles ligados, faixa inferior chega ao vídeo e o
+  resto continua com o Instagram, inclusive no Story, nenhum elemento novo, sem laço de mutações),
+  controles do Instagram na faixa continuam tocáveis (botão de som, link de música do Reel, campo de
+  resposta do Story no celular), vídeo reciclado para outro post e vídeo cortado pela borda inferior
+  desfazem o recorte, debounce com teto, desligar e religar pelo menu ao vivo e após recarregar sem
+  itens duplicados (menu simulado como Violentmonkey e como Tampermonkey), PiP e `controlsList`
+  restaurados, atalhos e campos editáveis, post de foto aberto não mexe no vídeo do feed, volume
+  lembrado entre vídeos sem gravar as próprias mudanças, sem regravar valor igual, sem zerar volume
+  inválido nem tirar o mudo sem gesto, limpeza (inclusive em conteúdo novo, reciclado, só no
+  cabeçalho e com regra desligada), Seguindo por carga, por SPA e sem laço, nada fora do Instagram. O vídeo
+  de teste (`instagram-video.webm`) é sintético (barras de cor do ffmpeg).
 - `test_links.py`: Letterboxd (TMDB), IMDb, receitas em `@graph`/lista, Google Voos (`q` e `tfs`) ⇄
   Skyscanner, SPA mudando a rota, sem rota na URL não lê o texto da página, alvo de 44 px no PC e
   no celular.

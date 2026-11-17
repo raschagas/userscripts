@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stories • Instagram (fixture)</title>
+<style>
+  body { margin: 0; font: 14px system-ui, sans-serif; background: #1a1a1a; color: #fff; }
+  #story { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #1a1a1a; }
+  section { width: min(380px, 100vw); }
+  .media { position: relative; width: 100%; aspect-ratio: 9 / 16; max-height: calc(100vh - 80px); background: #000; border-radius: 8px; overflow: hidden; }
+  .vw { height: 100%; }
+  .media video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .ov { position: absolute; inset: 0; }
+  .bars { pointer-events: none; position: absolute; top: 8px; left: 8px; right: 8px; height: 2px; display: flex; gap: 4px; }
+  .seg { flex: 1; height: 2px; background: rgba(255, 255, 255, .35); border-radius: 2px; overflow: hidden; }
+  .fill { height: 100%; background: #fff; width: 0; }
+  .cab { position: absolute; top: 18px; left: 12px; display: flex; gap: 8px; align-items: center; }
+  .av { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(45deg, #f9ce34, #ee2a7b, #6228d7); }
+  .prev { position: absolute; left: 0; top: 0; bottom: 0; width: 30%; }
+  .next { position: absolute; right: 0; top: 0; bottom: 0; width: 70%; }
+  .reply { margin-top: 12px; display: flex; }
+  .reply input { flex: 1; background: transparent; color: #fff; border: 1px solid #888; border-radius: 22px; padding: 10px 14px; }
+</style>
+</head>
+<body>
+<div role="dialog" id="story" aria-label="Story">
+  <section>
+    <div class="media">
+      <div class="vw"><video id="sv" src="instagram-video.webm" muted autoplay playsinline></video></div>
+      <div class="ov">
+        <div class="prev" data-tap="prev"></div>
+        <div class="next" data-tap="next"></div>
+        <div class="bars" id="bars">
+          <div class="seg"><div class="fill" style="width:100%"></div></div>
+          <div class="seg"><div class="fill" id="cur"></div></div>
+          <div class="seg"><div class="fill"></div></div>
+        </div>
+        <div class="cab"><div class="av"></div><b>conta_exemplo</b> <span>2 h</span></div>
+      </div>
+    </div>
+    <div class="reply"><input id="resposta" placeholder="Responder a conta_exemplo..."></div>
+  </section>
+</div>
+<script>
+  window.igTaps = [];
+  const v = document.getElementById('sv'), cur = document.getElementById('cur');
+  const paint = () => { if (v.duration) cur.style.width = (100 * v.currentTime / v.duration) + '%'; };
+  v.addEventListener('timeupdate', paint); v.addEventListener('seeked', paint);
+  for (const t of ['pointerdown', 'click']) document.addEventListener(t, e => {
+    const z = e.target.closest('[data-tap]'); if (z) window.igTaps.push(t + ':' + z.dataset.tap);
+  });
+</script>
+</body>
+</html>

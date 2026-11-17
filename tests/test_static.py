@@ -25,6 +25,7 @@ VERSOES = {
     "navidrome-letras.user.js": "1.0.1",
     "shop-filter.user.js": "1.3.0",
     "unbloat.user.js": "1.0.0",
+    "instagram-ux.user.js": "1.0.0",
 }
 
 
@@ -57,6 +58,8 @@ def test_cabecalho(name):
     assert d["name"] and d["description"]
     assert "require" not in d, "sem @require remoto"
     grants = {"none", "GM_getValue", "GM_setValue", "GM_registerMenuCommand"}
+    if name == "instagram-ux.user.js":  # tira o item antigo do menu antes de re-registrar (Violentmonkey)
+        grants |= {"GM_unregisterMenuCommand"}
     if name == MUSICA:  # única exceção: consulta só o MusicBrainz (MBID pela URL)
         grants |= {"GM_xmlhttpRequest"}
         assert d["connect"] == ["musicbrainz.org"], d["connect"]
@@ -256,3 +259,36 @@ def test_unbloat_so_oculta():
 ])
 def test_musica_escopo(url, expected):
     assert runs_on(meta_of(MUSICA), url) is expected
+
+
+IG = "instagram-ux.user.js"
+
+
+@pytest.mark.parametrize("url,expected", [
+    ("https://www.instagram.com/", True),
+    ("https://www.instagram.com/reels/", True),
+    ("https://www.instagram.com/reel/ABCdef123/", True),
+    ("https://www.instagram.com/stories/conta_exemplo/1234567890/", True),
+    ("http://www.instagram.com/", False),
+    ("https://instagram.com/", False),
+    ("https://www.instagram.com.evil.com/", False),
+    ("https://evil.com/?u=https://www.instagram.com/", False),
+    ("https://www.camara.leg.br/", False),
+])
+def test_instagram_escopo(url, expected):
+    assert runs_on(meta_of(IG), url) is expected, url
+
+
+def test_instagram_cabecalho():
+    m = meta_of(IG)
+    assert [v for k, v in m if k == "exclude"] == ["*://camara.leg.br/*", "*://*.camara.leg.br/*",
+                                                   "*://camara.gov.br/*", "*://*.camara.gov.br/*"]
+    assert any(k == "noframes" for k, _ in m)
+    assert [v for k, v in m if k == "run-at"] == ["document-start"]
+    assert sorted(v for k, v in m if k == "grant") == ["GM_getValue", "GM_registerMenuCommand", "GM_setValue", "GM_unregisterMenuCommand"]
+
+
+def test_instagram_nunca_clica_nem_faz_polling():
+    code = (SRC / IG).read_text(encoding="utf-8")
+    assert not re.search(r"\.(click|submit|requestSubmit|dispatchEvent)\s*\(", code)
+    assert "setInterval" not in code

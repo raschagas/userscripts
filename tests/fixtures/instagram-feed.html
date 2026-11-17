@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Instagram (fixture)</title>
+<style>
+  body { margin: 0; font: 14px system-ui, sans-serif; background: #fff; color: #000; }
+  #app-banner { position: fixed; top: 0; left: 0; right: 0; height: 48px; z-index: 5; display: flex; align-items: center;
+    justify-content: space-between; padding: 0 12px; background: #efefef; border-bottom: 1px solid #dbdbdb; }
+  #app-banner a { background: #0095f6; color: #fff; padding: 6px 12px; border-radius: 8px; text-decoration: none; }
+  main { display: flex; justify-content: center; gap: 48px; padding-top: 64px; }
+  #feed { width: min(470px, 100vw); }
+  article { margin: 0 0 24px; border-bottom: 1px solid #dbdbdb; }
+  article header { display: flex; gap: 8px; align-items: center; padding: 8px; }
+  .av { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(45deg, #f9ce34, #ee2a7b, #6228d7); }
+  .m { position: relative; width: 100%; aspect-ratio: 4 / 5; background: #000; overflow: hidden; }
+  .vw { height: 100%; }
+  .m video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .tap { position: absolute; inset: 0; }
+  .mute { position: absolute; right: 12px; bottom: 12px; width: 28px; height: 28px; border-radius: 50%; border: 0;
+    background: rgba(0, 0, 0, .6); color: #fff; }
+  .foto { width: 100%; aspect-ratio: 1; background: linear-gradient(135deg, #8ec5fc, #e0c3fc); }
+  .acoes { padding: 8px; }
+  .sug { padding: 12px 8px 24px; border-bottom: 1px solid #dbdbdb; margin-bottom: 24px; }
+  .sug .cards { display: flex; gap: 8px; margin-top: 8px; }
+  .sug .card { width: 140px; padding: 12px; border: 1px solid #dbdbdb; border-radius: 8px; text-align: center; }
+  button.seguir { background: #0095f6; color: #fff; border: 0; border-radius: 8px; padding: 6px 12px; }
+  aside { width: 320px; padding-top: 16px; }
+  aside .linha { display: flex; justify-content: space-between; padding: 6px 0; }
+  @media (max-width: 900px) { aside { display: none; } }
+</style>
+</head>
+<body>
+<div id="app-banner"><span>Instagram</span><a href="#app" id="abrir-app">Abrir app</a></div>
+<header id="cabecalho-movel" style="position:fixed;top:48px;right:8px;z-index:4;display:flex;gap:8px">
+  <a href="#entrar" id="entrar">Entrar</a><a href="#app" id="abrir-aplicativo"><div><span>Abrir aplicativo</span></div></a>
+</header>
+<main>
+  <div id="feed">
+    <article id="p1">
+      <header><div class="av"></div><b>conta_exemplo</b></header>
+      <div class="m">
+        <div class="vw"><video id="v1" src="instagram-video.webm" muted autoplay loop playsinline></video></div>
+        <div class="tap" data-tap="p1"><button class="mute" data-tap="mute1" aria-label="Ativar som">🔇</button></div>
+      </div>
+      <div class="acoes" id="acoes1">♡ 💬 ➤ · Curtido por 120 pessoas</div>
+    </article>
+    <div class="sug" id="sug">
+      <div><span>Sugestões para você</span> · <a href="#">Ver tudo</a></div>
+      <div class="cards">
+        <div class="card">perfil_a<br><button class="seguir">Seguir</button></div>
+        <div class="card">perfil_b<br><button class="seguir">Seguir</button></div>
+      </div>
+    </div>
+    <article id="p2">
+      <header><div class="av"></div><div><b>marca_exemplo</b><br><span>Patrocinado</span></div></header>
+      <div class="m">
+        <div class="vw"><video id="v2" src="instagram-video.webm" muted autoplay loop playsinline></video></div>
+        <div class="st"><div class="tap" data-tap="p2"></div></div>
+      </div>
+      <div class="acoes">Saiba mais</div>
+    </article>
+    <article id="p3">
+      <header><div class="av"></div><b>outra_conta</b></header>
+      <div class="foto"></div>
+      <div class="acoes" id="acoes3">Foto sem vídeo · Patrocinado por ninguém</div>
+    </article>
+    <article id="p4">
+      <header><div class="av"></div><b>conta_video</b></header>
+      <div class="m">
+        <div class="vw"><video id="v4" src="instagram-video.webm" muted autoplay loop playsinline></video></div>
+        <div class="st"><div class="tap" data-tap="p4"></div></div>
+      </div>
+      <div class="acoes">♡ 💬 ➤</div>
+    </article>
+  </div>
+  <aside id="lateral">
+    <div class="linha" id="perfil"><b>meu_perfil</b><a href="#">Mudar</a></div>
+    <div id="sug-lateral">
+      <div class="linha"><span>Sugestões para você</span><a href="#">Ver tudo</a></div>
+      <div class="linha">perfil_c <button class="seguir">Seguir</button></div>
+    </div>
+    <div id="rodape-lateral">Sobre · Ajuda · Privacidade</div>
+  </aside>
+</main>
+<input id="busca" placeholder="Pesquisar" style="position:fixed;left:8px;bottom:8px">
+<div id="nota" contenteditable="true" style="position:fixed;left:200px;bottom:8px;width:120px;border:1px solid #ccc">nota</div>
+<script>
+  window.igTaps = [];
+  document.addEventListener('click', e => { const t = e.target.closest('[data-tap]'); if (t) window.igTaps.push(t.dataset.tap); });
+  document.addEventListener('keydown', e => { (window.igKeys = window.igKeys || []).push(e.key); });
+</script>
+</body>
+</html>
