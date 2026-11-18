@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Filtro de lojas — nota e vendas em cada anúncio
 // @namespace    raschagas/userscripts
-// @version      1.3.0
+// @version      1.3.1
 // @description  Marca cada anúncio com um círculo verde, vermelho ou cinza pela nota e pela quantidade de avaliações ou vendas, esmaece ou oculta os reprovados, some com patrocinados reprovados e corrige links de combos do AliExpress. Ajustes por site.
 // @match        https://*.aliexpress.com/*
 // @match        https://www.amazon.com.br/*
@@ -405,9 +405,11 @@
         const prefer = !!card && card.getAttribute('data-us-sf-combo') === '1';
         const r = canonicalize(a.href, { hintId: hint, preferHint: prefer });
         if (!r) return;
-        ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation();
-        const newTab = ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.button === 1 || (a.target || '').toLowerCase() === '_blank';
-        if (newTab) window.open(r.url, '_blank', 'noopener'); else location.assign(r.url);
+        // Só troca o destino do próprio link e deixa o navegador abrir: Ctrl/meio-clique continuam em segundo
+        // plano e o alvo (_blank ou mesma aba) é o do site. window.open() trazia a aba nova para a frente.
+        if (!a.hasAttribute(ORIG)) a.setAttribute(ORIG, raw);
+        a.setAttribute('href', r.url);
+        ev.stopPropagation(); ev.stopImmediatePropagation();
       };
       document.addEventListener('click', h, true); document.addEventListener('auxclick', h, true);
     }

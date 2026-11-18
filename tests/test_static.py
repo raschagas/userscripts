@@ -23,7 +23,7 @@ VERSOES = {
     "georritmo-links.user.js": "1.0.0",
     "musica-links.user.js": "1.0.0",
     "navidrome-letras.user.js": "1.0.1",
-    "shop-filter.user.js": "1.3.0",
+    "shop-filter.user.js": "1.3.1",
     "unbloat.user.js": "1.0.0",
     "instagram-ux.user.js": "1.0.1",
 }

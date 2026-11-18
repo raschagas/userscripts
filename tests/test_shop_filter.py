@@ -397,8 +397,26 @@ def test_aliexpress_link_blank_abre_em_nova_aba(make_ctx):
     page.evaluate("""() => { const a = document.querySelector('[data-i="e"] a.search-card-item'); a.target = '_blank';
       a.setAttribute('href', 'https://pt.aliexpress.com/ssr/300000512/BundleDeals2?x=1'); window.opened = [];
       window.open = (u, t) => { window.opened.push([u, t]); return null; }; }""")
-    page.locator('[data-i="e"] a.search-card-item').click()
-    assert page.evaluate("window.opened") == [["https://pt.aliexpress.com/item/1005006666666666.html", "_blank"]]
+    with ctx.expect_page() as nova:
+        page.locator('[data-i="e"] a.search-card-item').click()
+    nova.value.wait_for_url("https://pt.aliexpress.com/item/1005006666666666.html*")
+    # Nada de window.open (que traz a aba para a frente): o navegador abre pelo próprio link.
+    assert page.evaluate("window.opened") == []
+    assert page.url == ALI
+
+
+def test_aliexpress_ctrl_clique_abre_pelo_navegador(make_ctx):
+    ctx = make_ctx()
+    serve(ctx, "https://pt.aliexpress.com/**", "ali-pc.html")
+    page = open_page(ctx, ALI)
+    inject(page, S)
+    page.evaluate("""() => { const a = document.querySelector('[data-i="e"] a.search-card-item');
+      a.setAttribute('href', 'https://pt.aliexpress.com/ssr/300000512/BundleDeals2?x=1'); window.opened = [];
+      window.open = (u, t) => { window.opened.push([u, t]); return null; }; }""")
+    with ctx.expect_page() as nova:
+        page.locator('[data-i="e"] a.search-card-item').click(modifiers=["Control"])
+    nova.value.wait_for_url("https://pt.aliexpress.com/item/1005006666666666.html*")
+    assert page.evaluate("window.opened") == []
     assert page.url == ALI
 
 
@@ -799,3 +817,33 @@ def test_price_draft_cannot_transfer_to_changed_currency(make_ctx):
     assert page.evaluate("JSON.parse(localStorage.getItem('__gm:site:aliexpress')||'{}').prices?.USD||null") is None
     assert page.evaluate(f"{root}.querySelector('#pcurrency').textContent")=='USD'
     assert page.evaluate(f"{root}.querySelector('#pmax').value")==''
+
+
+_COMBO = 'https://pt.aliexpress.com/ssr/300000512/BundleDeals2?x=1'
+_ITEM = "https://pt.aliexpress.com/item/1005006666666666.html"
+_SEL = '[data-i="e"] a.search-card-item'
+
+
+def _combo_page(make_ctx, extra=""):
+    ctx = make_ctx()
+    serve(ctx, "https://pt.aliexpress.com/**", "ali-pc.html")
+    page = open_page(ctx, ALI)
+    inject(page, S)
+    page.evaluate("""(c) => { const a = document.querySelector('%s'); a.setAttribute('href', c); window.opened = [];
+      window.open = (u, t) => { window.opened.push([u, t]); return null; }; %s }""" % (_SEL, extra), _COMBO)
+    return ctx, page
+
+
+def test_aliexpress_clique_do_meio_abre_pelo_navegador(make_ctx):
+    ctx, page = _combo_page(make_ctx)
+    with ctx.expect_page() as nova:
+        page.locator(_SEL).click(button="middle")
+    nova.value.wait_for_url(_ITEM + "*")
+    assert page.url == ALI and page.evaluate("window.opened") == []
+
+
+def test_aliexpress_clique_simples_vence_navegacao_por_js_da_pagina(make_ctx):
+    ctx, page = _combo_page(make_ctx, "a.addEventListener('click', e => { e.preventDefault(); window.__pagina = 1; location.assign(c); });")
+    page.locator(_SEL).click()
+    page.wait_for_url(_ITEM + "*")
+    assert page.evaluate("window.__pagina") is None
