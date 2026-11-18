@@ -104,7 +104,9 @@ def vis(page, sels):
 def test_liga_controles_e_libera_so_a_faixa_inferior(make_ctx):
     page = open_ig(make_ctx)
     assert page.evaluate("document.documentElement.hasAttribute('data-us-ig-barra')")
-    assert page.evaluate("[...document.querySelectorAll('video')].every(v => v.controls)")
+    on_screen = "[...document.querySelectorAll('video')].map(v => { const r = v.getBoundingClientRect(); return [v.id, r.bottom > 0 && r.top < innerHeight, v.controls]; })"
+    st = page.evaluate(on_screen)
+    assert any(c for _, _, c in st) and all(c == vis_ for _, vis_, c in st), f"controls só nos vídeos na tela: {st}"
     for vid, tap in (("#v1", "p1"), ("#v4", "p4")):  # camada irmã e camada dentro de um invólucro estático
         show(page, vid)
         r = rect(page, vid)
@@ -120,6 +122,24 @@ def test_liga_controles_e_libera_so_a_faixa_inferior(make_ctx):
     page.mouse.click(rect(page, "#v1")["x"] + 100, rect(page, "#v1")["y"] + 100)
     assert page.evaluate("igTaps") == ["p1"], "toque no meio segue para o Instagram"
     assert page.errors == []
+
+
+def test_controles_so_na_tela_e_restaurados_ao_sair(make_ctx):
+    page = open_ig(make_ctx, inject_now=False)
+    page.evaluate("document.getElementById('v4').setAttribute('controlslist', 'nodownload')")
+    inject(page, S)
+    settle(page)
+    got = "id => { const v = document.getElementById(id); return [v.controls, v.disablePictureInPicture, v.controlsList.value]; }"
+    assert page.evaluate(got, "v1") == [True, True, "nodownload noremoteplayback noplaybackrate"]
+    assert page.evaluate(got, "v4") == [False, False, "nodownload"], "fora da tela: original"
+    show(page, "#v4")
+    settle(page)
+    assert page.evaluate(got, "v4") == [True, True, "nodownload noremoteplayback noplaybackrate"]
+    assert page.evaluate(got, "v1") == [False, False, ""], "saiu da tela: volta ao original"
+    show(page, "#v1")
+    settle(page)
+    assert page.evaluate(got, "v1")[0] is True
+    assert page.evaluate(got, "v4") == [False, False, "nodownload"]
 
 
 def test_story_topo_e_toques_com_o_instagram(make_ctx):
@@ -589,3 +609,168 @@ def test_fora_do_instagram_nao_faz_nada(make_ctx):
     assert page.evaluate("!!document.getElementById('us-instagram-ux')") is False
     assert page.evaluate("window.__menu.length") == 0
     assert page.evaluate("document.getElementById('v1').controls") is False
+
+
+# ---------- Desempenho na rolagem infinita ----------
+
+INFINITO = "instagram-feed-infinito.html"
+COUNT_EFP = """window.__efp = 0; const f = Document.prototype.elementsFromPoint;
+    Document.prototype.elementsFromPoint = function (...a) { window.__efp++; return f.apply(this, a); }; 0;"""
+
+
+def test_rolagem_continua_sem_varrer_quando_nada_muda(make_ctx):
+    """Rolar com o vídeo inteiro na tela não refaz o recorte (nada de elementsFromPoint/layout forçado)."""
+    page = open_ig(make_ctx, INFINITO)
+    show(page, "#v0")
+    settle(page, 400)
+    assert page.evaluate("document.querySelector('#p0 .tap').hasAttribute('data-us-ig-cobre')")
+    page.evaluate(COUNT_EFP)
+    r = rect(page, "#v0")
+    page.mouse.move(100, 300)
+    for _ in range(20):  # rolagem contínua (sem pausa de 200 ms), o vídeo continua inteiro na tela
+        page.mouse.wheel(0, 3)
+        page.wait_for_timeout(40)
+    assert page.evaluate("window.__efp") == 0, "nenhuma varredura de camadas durante a rolagem"
+    settle(page, 500)
+    assert page.evaluate("window.__efp") <= 10 * page.evaluate(
+        "[...document.querySelectorAll('video')].filter(v => { const r = v.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight; }).length"), \
+        "um recálculo só quando a rolagem para"
+    r = rect(page, "#v0")
+    assert hit(page, r["x"] + r["w"] / 2, r["b"] - 10) == "v0", "o furo acompanha o vídeo"
+    assert hit(page, r["x"] + r["w"] / 2, r["y"] + r["h"] / 2) == "p0"
+    assert page.errors == []
+
+
+def test_barra_desligada_pelo_menu_nao_observa_nem_varre(make_ctx):
+    page = open_ig(make_ctx, INFINITO)
+    show(page, "#v0")
+    settle(page, 400)
+    page.evaluate("window.__menu.find(m => m.t.includes('Barra')).f()")
+    settle(page, 300)
+    assert page.evaluate("[...document.querySelectorAll('video')].every(v => !v.controls)")
+    page.evaluate(COUNT_EFP)
+    page.mouse.move(100, 300)
+    for _ in range(15):
+        page.mouse.wheel(0, 120)
+        page.wait_for_timeout(40)
+    settle(page, 500)
+    assert page.evaluate("[...document.querySelectorAll('video')].every(v => !v.controls)")
+    assert page.evaluate("window.__efp") == 0
+    page.evaluate("window.__menu.find(m => m.t.includes('Barra')).f()")  # religa
+    settle(page, 500)
+    assert page.evaluate("[...document.querySelectorAll('video')].some(v => v.controls)"), "religar volta a funcionar"
+    assert page.errors == []
+
+
+def test_carregador_do_feed_continua_com_posts_ocultos(make_ctx):
+    page = open_ig(make_ctx, INFINITO)
+    before = page.evaluate("igLoads.length")
+    for _ in range(6):
+        page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)")
+        settle(page, 250)
+    assert page.evaluate("igLoads.length") >= before + 4, "a sentinela continua disparando"
+    assert page.evaluate("document.querySelectorAll('article[data-us-ig-oculto=patrocinado]').length") >= 2
+    assert page.evaluate("document.querySelectorAll('.sug[data-us-ig-oculto=sugestao]').length") >= 2
+    assert vis(page, ["#p5", "#sug3", "#p0"]) == {"#p5": False, "#sug3": False, "#p0": True}
+    # Vídeo de um lote novo: controles e furo como nos primeiros.
+    vid = page.evaluate("[...document.querySelectorAll('video')].at(-2).id")
+    show(page, "#" + vid)
+    settle(page, 300)
+    r = rect(page, "#" + vid)
+    assert page.evaluate(f"document.getElementById('{vid}').controls") is True
+    assert hit(page, r["x"] + r["w"] / 2, r["b"] - 10) == vid
+    assert page.errors == []
+
+
+def test_plano_descartado_quando_o_video_sai_da_tela(make_ctx):
+    """Botão novo no post enquanto o vídeo está fora da tela: ao voltar, o furo é recalculado, não reaproveitado."""
+    page = open_ig(make_ctx, INFINITO)
+    show(page, "#v0")
+    settle(page, 400)
+    assert page.evaluate("document.querySelector('#p0 .tap').hasAttribute('data-us-ig-cobre')")
+    y0 = page.evaluate("scrollY")
+    page.evaluate("scrollTo(0, scrollY + 3000)")
+    settle(page, 500)
+    page.evaluate("""const b = document.createElement('button'); b.id = 'novo'; b.textContent = 'Marcar';
+        b.style.cssText = 'position:absolute;left:12px;bottom:12px;width:120px;height:28px';
+        document.querySelector('#p0 .tap').append(b);""")
+    settle(page, 500)
+    page.evaluate(f"scrollTo(0, {y0})")
+    settle(page, 600)
+    b, r = rect(page, "#novo"), rect(page, "#v0")
+    assert hit(page, b["x"] + b["w"] / 2, b["y"] + b["h"] / 2) == "novo", "o controle novo na faixa continua tocável"
+    assert hit(page, r["x"] + r["w"] * 0.75, r["b"] - 10) == "v0", "o furo encolhe para o lado livre"
+    assert page.errors == []
+
+
+def wheel_steps(page, n, dy, ms=40):
+    for _ in range(n):
+        page.mouse.wheel(0, dy)
+        page.wait_for_timeout(ms)
+
+
+def test_video_mais_alto_que_a_tela_tem_furo_durante_a_rolagem(make_ctx):
+    """Vídeo mais alto que a tela nunca fica 100% visível: o furo aparece quando o fundo entra, ainda
+    rolando, e some quando a faixa sai pelo topo, sem esperar a rolagem parar."""
+    page = open_ig(make_ctx, INFINITO)
+    page.evaluate("const m = document.querySelector('#p0 .m'); m.style.aspectRatio = 'auto'; m.style.height = '1100px'")
+    page.evaluate("window.scrollTo(0, document.getElementById('v0').getBoundingClientRect().top + scrollY)")
+    settle(page, 500)
+    cut = "document.querySelector('#p0 .tap').hasAttribute('data-us-ig-cobre')"
+    assert page.evaluate(cut) is False, "fundo fora da tela: sem furo"
+    page.mouse.move(100, 300)
+    wheel_steps(page, 25, 20)          # o fundo entra (1100 → ~600), sem pausa de repouso
+    wheel_steps(page, 6, 3)
+    r = rect(page, "#v0")
+    assert r["y"] < 0 and r["b"] < page.viewport_size["height"]
+    assert page.evaluate(cut), "furo durante a rolagem"
+    assert hit(page, r["x"] + r["w"] / 2, r["b"] - 10) == "v0"
+    assert hit(page, r["x"] + r["w"] / 2, r["b"] - 80) == "p0"
+    # A faixa sai pelo topo: o recorte é desfeito ainda na rolagem.
+    page.evaluate("window.__cortes = []; new MutationObserver(() => window.__cortes.push(document.querySelector('#p0 .tap').hasAttribute('data-us-ig-cobre')))"
+                  ".observe(document.querySelector('#p0 .tap'), {attributes: true})")
+    steps = int((r["b"] - 20) // 20)
+    wheel_steps(page, steps, 20)
+    r = rect(page, "#v0")
+    assert 0 < r["b"] < 48, r
+    page.wait_for_timeout(60)
+    assert page.evaluate(cut) is False, "faixa fora da tela: recorte desfeito sem esperar o repouso"
+    # Entrando por cima (rolando para cima): a faixa cabe antes de o vídeo inteiro entrar.
+    wheel_steps(page, 8, -20)
+    wheel_steps(page, 4, -3)
+    r = rect(page, "#v0")
+    assert r["y"] < 0 and r["b"] > 100
+    assert page.evaluate(cut), "furo ao entrar por cima, durante a rolagem"
+    assert hit(page, r["x"] + r["w"] / 2, r["b"] - 10) == "v0"
+    assert page.errors == []
+
+
+def test_texto_mudado_no_post_recalcula_o_furo(make_ctx):
+    """Só characterData (rótulo na faixa que cresce): o vídeo do post é recalculado."""
+    page = open_ig(make_ctx, inject_now=False)
+    page.evaluate("""const a = document.createElement('a'); a.href = '#musica'; a.id = 'musica'; a.textContent = '♪';
+        a.style.cssText = 'position:absolute;left:12px;bottom:14px;color:#fff;background:#000;padding:4px;white-space:nowrap';
+        document.querySelector('#p1 .tap').append(a);""")
+    inject(page, S)
+    show(page, "#v1")
+    settle(page, 400)
+    page.evaluate("document.getElementById('musica').firstChild.nodeValue = '♪ conta_video · Áudio'")
+    settle(page, 500)
+    lk = rect(page, "#musica")
+    assert hit(page, lk["x"] + lk["w"] - 6, lk["y"] + lk["h"] / 2) == "musica", "rótulo maior continua visível"
+    r = rect(page, "#v1")
+    assert hit(page, r["x"] + r["w"] * 0.6, r["b"] - 10) == "v1", "furo no lado livre"
+
+
+def test_marca_dentro_de_no_pendente_e_reavaliada(make_ctx):
+    """Post marcado movido para um invólucro novo e rótulo trocado no mesmo lote: a marca interna é reavaliada."""
+    page = open_ig(make_ctx)
+    assert vis(page, ["#p2"]) == {"#p2": False}
+    page.evaluate("""const p = document.getElementById('p2'), w = document.createElement('div'); w.id = 'inv';
+        p.before(w); w.append(p); document.querySelector('#p2 header span').firstChild.nodeValue = 'Seguir';""")
+    settle(page)
+    assert vis(page, ["#p2"]) == {"#p2": True}
+    page.evaluate("""const p = document.getElementById('p2'), w = document.createElement('div'); w.id = 'inv2';
+        p.before(w); w.append(p); document.querySelector('#p2 header span').firstChild.nodeValue = 'Patrocinado';""")
+    settle(page)
+    assert vis(page, ["#p2"]) == {"#p2": False}

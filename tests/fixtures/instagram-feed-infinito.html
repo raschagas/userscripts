@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Instagram feed infinito (fixture)</title>
+<style>
+  body { margin: 0; font: 14px system-ui, sans-serif; background: #fff; color: #000; }
+  main { display: flex; justify-content: center; padding-top: 16px; }
+  #feed { width: min(470px, 100vw); }
+  article { margin: 0 0 24px; border-bottom: 1px solid #dbdbdb; }
+  article header { display: flex; gap: 8px; align-items: center; padding: 8px; }
+  .av { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(45deg, #f9ce34, #ee2a7b, #6228d7); }
+  .m { position: relative; width: 100%; aspect-ratio: 4 / 5; background: #000; overflow: hidden; }
+  .vw { height: 100%; }
+  .m video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .tap { position: absolute; inset: 0; }
+  .mute { position: absolute; right: 12px; bottom: 12px; width: 28px; height: 28px; border-radius: 50%; border: 0;
+    background: rgba(0, 0, 0, .6); color: #fff; }
+  .foto { width: 100%; aspect-ratio: 1; background: linear-gradient(135deg, #8ec5fc, #e0c3fc); }
+  .acoes { padding: 8px; }
+  .sug { padding: 12px 8px 24px; border-bottom: 1px solid #dbdbdb; margin-bottom: 24px; }
+  .sug .cards { display: flex; gap: 8px; margin-top: 8px; }
+  .sug .card { width: 140px; padding: 12px; border: 1px solid #dbdbdb; border-radius: 8px; text-align: center; }
+  #sentinela { height: 1px; }
+  #carregando { padding: 16px; text-align: center; color: #888; }
+</style>
+</head>
+<body>
+<main>
+  <div id="feed"></div>
+</main>
+<script>
+  // Carregador como o do Instagram: uma sentinela no fim do feed observada por IntersectionObserver
+  // com margem; ao entrar, acrescenta um lote. `window.igLoads` registra cada lote e o atraso entre a
+  // sentinela ficar visível (entry.time) e o callback rodar.
+  (() => {
+    const feed = document.getElementById('feed');
+    const LOTE = 6;
+    let n = 0;
+    window.igLoads = [];
+    window.igTaps = [];
+    document.addEventListener('click', e => { const t = e.target.closest('[data-tap]'); if (t) window.igTaps.push(t.dataset.tap); });
+    const comments = i => Array.from({ length: 12 }, (_, k) =>
+      `<li><b>pessoa_${i}_${k}</b> <span>comentário ${k} sobre o post ${i}</span> <time>${k} h</time></li>`).join('');
+    function post(i) {
+      const kind = i % 6;
+      if (kind === 3) {  // bloco "Sugestões para você" entre posts
+        const s = document.createElement('div');
+        s.className = 'sug'; s.id = 'sug' + i;
+        s.innerHTML = `<div><span>Sugestões para você</span> · <a href="#">Ver tudo</a></div>
+          <div class="cards"><div class="card">perfil_${i}a<br><button>Seguir</button></div>
+          <div class="card">perfil_${i}b<br><button>Seguir</button></div></div>`;
+        return s;
+      }
+      const a = document.createElement('article');
+      a.id = 'p' + i;
+      const sponsored = kind === 5 ? '<br><span>Patrocinado</span>' : '';
+      const media = kind === 1 || kind === 4
+        ? '<div class="foto"></div>'
+        : `<div class="m"><div class="vw"><video id="v${i}" src="instagram-video.webm" muted autoplay loop playsinline></video></div>
+           <div class="st"><div class="tap" data-tap="p${i}"><button class="mute" aria-label="Ativar som">🔇</button></div></div></div>`;
+      a.innerHTML = `<header><div class="av"></div><div><b>conta_${i}</b>${sponsored}</div></header>${media}
+        <div class="acoes">♡ 💬 ➤ · Curtido por ${i * 7} pessoas</div><ul class="coment">${comments(i)}</ul>`;
+      return a;
+    }
+    function lote() {
+      const f = document.createDocumentFragment();
+      for (let k = 0; k < LOTE; k++) f.append(post(n++));
+      feed.append(f);
+    }
+    lote();
+    const sent = document.createElement('div');
+    sent.id = 'sentinela';
+    document.querySelector('main').after(sent);
+    new IntersectionObserver(es => {
+      for (const e of es) {
+        if (!e.isIntersecting) continue;
+        const t0 = performance.now();
+        window.igLoads.push({ at: t0, delay: t0 - e.time, total: n + LOTE });
+        lote();
+      }
+    }, { rootMargin: '0px 0px 800px 0px' }).observe(sent);
+  })();
+</script>
+</body>
+</html>

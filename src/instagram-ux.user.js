@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Instagram — vídeo e feed sem atrito
 // @namespace    raschagas/userscripts
-// @version      1.0.0
+// @version      1.0.1
 // @description  Barra de progresso em Reels, Stories e vídeos do feed, atalhos de teclado, volume lembrado e feed sem sugestões, patrocinados e banner do app. Nenhum elemento é acrescentado à página (só um estilo); os ajustes ficam no menu do gerenciador.
 // @match        https://www.instagram.com/*
 // @exclude      *://camara.leg.br/*
@@ -108,7 +108,7 @@ html[data-us-ig-app] [data-us-ig-oculto="app"]{display:none!important}`;
     }, { capture: true, passive: true });
   }
   function setupVideo(v) {
-    known.add(v);
+    if (!known.has(v)) { known.add(v); if (P.barra) for (const o of observers) o.observe(v); }
     if (wired.has(v)) return;
     wired.add(v);
     v.setAttribute('data-us-ig-v', '');
@@ -135,7 +135,7 @@ html[data-us-ig-app] [data-us-ig-oculto="app"]{display:none!important}`;
       if (cur && typeof cur === 'object' && cur.volume === v.volume && cur.mudo === v.muted) return;
       set('som', { volume: v.volume, mudo: v.muted });
     });
-    v.addEventListener('loadedmetadata', schedule);
+    v.addEventListener('loadedmetadata', () => { touch(v, DOM); schedule(); });
   }
 
   const nativeOn = new WeakSet();    // vídeos cujo `controls` o script ligou (sobrevive à poda)
@@ -150,7 +150,9 @@ html[data-us-ig-app] [data-us-ig-oculto="app"]{display:none!important}`;
   // Barra de progresso: controles nativos + furo na faixa inferior de cada camada que o Instagram põe por
   // cima do vídeo. As camadas são achadas pelo que está empilhado acima do vídeo na própria faixa
   // (elementsFromPoint), sem depender de classes.
-  function nativeBar(v) {
+  // Só escrita, sem ler geometria: controles nativos só nos vídeos na tela (fora dela não se vê, e
+  // controles num vídeo tocando recalculam estilo a cada quadro).
+  function nativeOnVideo(v) {
     if (!v.controls) { v.controls = true; nativeOn.add(v); }
     if (!orig.has(v)) {
       const added = [];
@@ -158,9 +160,28 @@ html[data-us-ig-app] [data-us-ig-oculto="app"]{display:none!important}`;
       orig.set(v, { pip: v.disablePictureInPicture, added });
       v.disablePictureInPicture = true;
     }
+  }
+  // Só leitura: decide o furo de um vídeo visível. Devolve null (sem furo) ou [[camada, polígono], …].
+  // Leituras de todos os vídeos vêm antes de qualquer escrita (um layout por varredura, sem thrash).
+  // Plano reaproveitado (sem elementsFromPoint) quando o vídeo só se moveu: mesmo tamanho, nenhuma
+  // mutação no post desde o cálculo e as camadas ainda no lugar.
+  // O plano vale só enquanto o vídeo continua na tela: ao sair, é descartado (mutação fora da tela não
+  // é vista) e, sem caber, uma varredura DOM também o descarta.
+  const plans = new WeakMap();       // vídeo -> { key, plan }
+  // A faixa cabe: o fundo do vídeo na tela e ao menos BAND px dele visíveis acima do fundo.
+  // Vídeo cortado pela borda inferior da tela: a faixa cairia no meio dele; sem furo até caber.
+  const fits = (r, bottom) => r.width >= 40 && r.height >= 2 * BAND && r.bottom <= bottom && r.bottom - BAND >= Math.max(r.top, 0);
+  function planBar(v, why) {
     const vr = v.getBoundingClientRect();
-    // Vídeo cortado pela borda inferior da tela: a faixa cairia no meio dele; sem furo até caber.
-    if (vr.width < 40 || vr.height < 2 * BAND || vr.bottom > vh() || vr.bottom - BAND < Math.max(vr.top, 0)) { release(v); return; }
+    if (!fits(vr, vh())) { if (why === DOM) plans.delete(v); return null; }
+    const key = `${vr.width}x${vr.height}x${Math.max(vr.left, 0)}x${Math.min(vr.right, vw())}`;
+    const c = plans.get(v);
+    if (why === GEO && c && c.key === key && c.plan.every(p => p[0].isConnected && limitOf(v).contains(p[0]))) return c.plan;
+    const plan = freshPlan(v, vr);
+    plans.set(v, { key, plan: plan || [] });
+    return plan;
+  }
+  function freshPlan(v, vr) {
     const bottom = vr.bottom;
     const full = { left: Math.max(vr.left, 0), right: Math.min(vr.right, vw()), top: bottom - BAND, bottom };
     const layers = new Set();
@@ -207,38 +228,105 @@ html[data-us-ig-app] [data-us-ig-oculto="app"]{display:none!important}`;
       const leftW = r.left - GAP - hole.left, rightW = hole.right - (r.right + GAP);
       if (leftW >= rightW) hole.right = r.left - GAP; else hole.left = r.right + GAP;
     }
-    if (hole.right - hole.left < MIN || blockers.some(r => meets(r, hole))) { release(v); return; }
-    for (const el of layers) { cut(el, hole); marked.set(el, v); }
+    if (hole.right - hole.left < MIN || blockers.some(r => meets(r, hole))) return null;
+    const plan = [];
+    for (const el of layers) { const poly = polyFor(el, hole); if (poly) plan.push([el, poly]); }
+    return plan;
   }
-  function cut(el, hole) {
+  // Só escrita: aplica o plano (camadas que saíram do plano perdem o recorte).
+  function applyBar(v, plan) {
+    if (!plan) { release(v); return; }
+    const keep = new Set(plan.map(p => p[0]));
+    for (const [el, owner] of marked) if (owner === v && !keep.has(el)) { uncut(el); marked.delete(el); }
+    for (const [el, poly] of plan) {
+      if (el.style.getPropertyValue('--us-ig-furo') !== poly) el.style.setProperty('--us-ig-furo', poly);
+      if (!el.hasAttribute('data-us-ig-cobre')) el.setAttribute('data-us-ig-cobre', '');
+      marked.set(el, v);
+    }
+  }
+  function polyFor(el, hole) {
     const r = el.getBoundingClientRect();
     const W = r.width, H = r.height;
-    if (!W || !H) return;
+    if (!W || !H) return null;
     const L = hole.left - r.left, R = hole.right - r.left, T = hole.top - r.top, B = hole.bottom - r.top;
     const px = n => `${Math.round(n * 10) / 10}px`;
     // Polígono com furo (ponte de área zero): só a faixa inferior do vídeo sai da camada,
     // para a barra nativa ficar visível e receber clique/arrasto; o resto continua do Instagram.
-    const poly = `polygon(evenodd, 0 0, ${px(W)} 0, ${px(W)} ${px(H)}, 0 ${px(H)}, 0 0, ${px(L)} ${px(T)}, ${px(L)} ${px(B)}, ${px(R)} ${px(B)}, ${px(R)} ${px(T)}, ${px(L)} ${px(T)})`;
-    if (el.style.getPropertyValue('--us-ig-furo') !== poly) el.style.setProperty('--us-ig-furo', poly);
-    if (!el.hasAttribute('data-us-ig-cobre')) el.setAttribute('data-us-ig-cobre', '');
+    // Coordenadas relativas à camada: rolar (vídeo e camada juntos) não muda o polígono.
+    return `polygon(evenodd, 0 0, ${px(W)} 0, ${px(W)} ${px(H)}, 0 ${px(H)}, 0 0, ${px(L)} ${px(T)}, ${px(L)} ${px(B)}, ${px(R)} ${px(B)}, ${px(R)} ${px(T)}, ${px(L)} ${px(T)})`;
+  }
+  // Devolve controls, PiP e controlsList ao original (vídeo que saiu da tela ou barra desligada).
+  function nativeOff(v) {
+    if (nativeOn.has(v)) { nativeOn.delete(v); v.controls = false; }
+    const o = orig.get(v);
+    if (!o) return;
+    orig.delete(v);
+    v.disablePictureInPicture = o.pip;
+    try { for (const t of o.added) v.controlsList.remove(t); } catch (_) {}
   }
   function undoBar() {
     // Vídeos conhecidos e os do DOM agora (um reinserido pode ainda não ter passado pela varredura).
-    for (const v of new Set([...known, ...document.querySelectorAll('video')])) {
-      if (nativeOn.has(v)) { nativeOn.delete(v); v.controls = false; }
-      const o = orig.get(v);
-      if (!o) continue;
-      orig.delete(v);
-      v.disablePictureInPicture = o.pip;
-      try { for (const t of o.added) v.controlsList.remove(t); } catch (_) {}
-    }
+    for (const v of new Set([...known, ...document.querySelectorAll('video')])) nativeOff(v);
     for (const el of marked.keys()) uncut(el);
     marked.clear();
   }
 
+  // Quais vídeos estão na tela, sem ler geometria na rolagem: IntersectionObserver. `seen` avisa quando
+  // o vídeo entra/sai da tela; dois observadores de borda avisam, no exato momento, quando a faixa passa
+  // a caber ou deixa de caber, também em vídeo mais alto que a tela ou que entra por cima (que nunca
+  // chegam a 100% visíveis): `bottomIn` (raiz estendida para cima e para os lados, razão 1 ⇔ o fundo do
+  // vídeo está na tela) e `bandIn` (raiz sem os BAND px do topo; deixa de cruzar ⇔ a faixa saiu pelo
+  // topo). A decisão usa a geometria que a própria entrada traz (sem layout forçado). Faixa que deixa
+  // de caber perde o furo na hora; a que passa a caber é recalculada (GEO, plano em cache se houver).
+  // O recorte é relativo à camada, então rolar sem mudar nada não exige recalcular: só o vídeo cuja
+  // faixa mudou, o que teve mutação dentro do seu post e, uma vez, os visíveis quando a rolagem para
+  // (camada trocada só por atributo).
+  const visible = new Set();         // vídeos que cruzam a tela agora
+  const dirty = new Map();           // vídeo visível -> GEO (só moveu) | DOM (recalcular tudo)
+  const fitNow = new WeakMap();      // vídeo visível -> a faixa cabia na última entrada de um observador
+  const GEO = 1, DOM = 2;
+  const touch = (v, why) => { if ((dirty.get(v) || 0) < why) dirty.set(v, why); };
+  function edge(v, r) {
+    const f = fits(r, vh());
+    if (f && !fitNow.get(v)) touch(v, GEO);
+    if (!f) release(v);
+    fitNow.set(v, f);
+  }
+  const seen = new IntersectionObserver(es => {
+    for (const e of es) {
+      const v = e.target;
+      if (e.isIntersecting && v.isConnected) {
+        if (!visible.has(v)) { visible.add(v); fitNow.delete(v); touch(v, GEO); if (P.barra) nativeOnVideo(v); }
+        edge(v, e.boundingClientRect);
+      } else { visible.delete(v); dirty.delete(v); fitNow.delete(v); plans.delete(v); release(v); nativeOff(v); }
+    }
+    if (P.barra && dirty.size) schedule();
+  }, { threshold: 0 });
+  const onEdge = es => {
+    for (const e of es) if (visible.has(e.target) && e.target.isConnected) edge(e.target, e.boundingClientRect);
+    if (P.barra && dirty.size) schedule();
+  };
+  const FAR = 100000;
+  const bottomIn = new IntersectionObserver(onEdge, { rootMargin: `${FAR}px ${FAR}px 0px ${FAR}px`, threshold: 1 });
+  const bandIn = new IntersectionObserver(onEdge, { rootMargin: `-${BAND}px ${FAR}px ${FAR}px ${FAR}px`, threshold: 0 });
+  const observers = [seen, bottomIn, bandIn];
+  // Só a barra usa os observadores (volume e atalhos não): desligada, ninguém observa e o estado de tela é zerado.
+  function watchVideos(on) {
+    for (const v of known) for (const o of observers) on ? o.observe(v) : o.unobserve(v);
+    if (!on) { visible.clear(); dirty.clear(); }
+  }
+  const touchAll = () => { for (const v of visible) touch(v, DOM); };
+  const SCROLL_REST = 200;
+  let restTimer = 0;
   function swallow(e) { e.preventDefault(); e.stopImmediatePropagation(); }
-  window.addEventListener('scroll', () => { if (P.barra) schedule(); }, { capture: true, passive: true });
-  window.addEventListener('resize', schedule, { passive: true });
+  // Repouso da rolagem: sempre rearmado (um salto por scrollTo pode chegar antes do observador marcar
+  // os vídeos que entraram); quem estiver na tela quando o tempo vence é recalculado por inteiro.
+  window.addEventListener('scroll', () => {
+    if (!P.barra) return;
+    clearTimeout(restTimer);
+    restTimer = setTimeout(() => { restTimer = 0; if (visible.size) { touchAll(); schedule(); } }, SCROLL_REST);
+  }, { capture: true, passive: true });
+  window.addEventListener('resize', () => { touchAll(); schedule(); }, { passive: true });
 
   // ---------- Atalhos (sem UI) ----------
   window.addEventListener('keydown', e => {
@@ -268,6 +356,10 @@ html[data-us-ig-app] [data-us-ig-oculto="app"]{display:none!important}`;
     sugestao: /^(sugest(ões|oes) para voc(ê|e)|sugerid[oa]s? para voc(ê|e)|suggested for you|publica(ções|coes) sugeridas|suggested posts)$/i,
     app: /^(abrir (o )?(app|aplicativo)|abrir no (app|aplicativo)|usar o (app|aplicativo)|obter (o )?(app|aplicativo)|open app|open in app|open the app|use the app|get the app)$/i,
   };
+  // Primeira letra possível de qualquer rótulo de RX (filtro barato antes do regex e do DOM): p(atrocinado,
+  // ublicações), s(ponsored, ugest-, uggested), a(brir), o(bter, pen), u(sar), g(et).
+  // Rótulo novo em RX com outra inicial: acrescente a letra aqui.
+  const FIRST = /^[psaoug]/i;
   const blocked = el => el.matches('main,body,html,nav,header,[role="dialog"]');
   // Item do feed: o <article> que contém o texto; senão o maior ancestral que ainda começa pelo
   // título ("Sugestões para você…") e não contém post, vídeo, diálogo nem main.
@@ -311,10 +403,12 @@ html[data-us-ig-app] [data-us-ig-oculto="app"]{display:none!important}`;
     return before(art.querySelector('video')) || before(imgs[1]) ? art : null;
   }
   function markText(textNode) {
+    const raw = textNode.nodeValue;
+    if (!raw || raw.length > 200) return;
+    const t = raw.trim();
+    if (t.length < 3 || t.length > 40 || !FIRST.test(t)) return;
     const el = textNode.parentElement;
     if (!el || el.closest('[data-us-ig-oculto]')) return;
-    const t = (textNode.nodeValue || '').trim();
-    if (!t || t.length > 40) return;
     let kind = null;
     for (const k of Object.keys(RX)) if (RX[k].test(t)) { kind = k; break; }
     if (!kind) return;
@@ -359,13 +453,17 @@ html[data-us-ig-app] [data-us-ig-oculto="app"]{display:none!important}`;
   // mutações contínuas não adiam a varredura para sempre).
   const pending = new Set(), touched = new Set();
   const QUIET = 100, MAX_WAIT = 500;
-  let timer = 0, raf = 0, first = 0, fullScan = true, lastUrl = location.href;
+  let timer = 0, sched = 0, first = 0, fullScan = true, lastUrl = location.href;
+  // Varredura num momento ocioso (fora do quadro em que a página rola), com teto de espera de 50 ms:
+  // na rolagem contínua quase nunca sobra ócio, e um teto maior atrasaria a limpeza e o furo visíveis.
+  const idle = typeof requestIdleCallback === 'function'
+    ? f => requestIdleCallback(f, { timeout: 50 }) : f => requestAnimationFrame(f);
   function schedule() {
-    if (raf) return;                 // a varredura já está no próximo quadro e verá esta mudança
+    if (sched) return;               // a varredura já está agendada e verá esta mudança
     const now = performance.now();
     if (!first) first = now;
     clearTimeout(timer);
-    timer = setTimeout(() => { timer = 0; first = 0; raf = requestAnimationFrame(() => { raf = 0; scan(); }); },
+    timer = setTimeout(() => { timer = 0; first = 0; sched = idle(() => { sched = 0; scan(); }); },
       Math.max(0, Math.min(QUIET, first + MAX_WAIT - now)));
   }
   function onUrl() {
@@ -374,13 +472,25 @@ html[data-us-ig-app] [data-us-ig-oculto="app"]{display:none!important}`;
     lastUrl = location.href;
     maybeFollowing(prev);
     fullScan = true;
+    touchAll();
     schedule();
+  }
+  // Nós pendentes sem os que já estão dentro de outro pendente (o percurso do ancestral os cobre).
+  function outermost(nodes) {
+    const out = [];
+    for (const n of nodes) {
+      if (!n.isConnected) continue;
+      let p = n.parentNode, inside = false;
+      for (; p; p = p.parentNode) if (nodes.has(p)) { inside = true; break; }
+      if (!inside) out.push(n);
+    }
+    return out;
   }
   function scan() {
     if (location.href !== lastUrl) onUrl();
     applyRootFlags();
     attachStyle();
-    for (const v of known) if (!v.isConnected) known.delete(v);
+    for (const v of known) if (!v.isConnected) { known.delete(v); for (const o of observers) o.unobserve(v); visible.delete(v); dirty.delete(v); }
     // Camada sem o seu vídeo (removido ou reciclado para outro post): desfaz o recorte.
     for (const [el, v] of marked) {
       if (!el.isConnected) marked.delete(el);
@@ -389,24 +499,49 @@ html[data-us-ig-app] [data-us-ig-oculto="app"]{display:none!important}`;
     const vids = document.querySelectorAll('video');
     for (const v of vids) setupVideo(v);
     if (P.barra) {
-      for (const v of vids) if (visibleArea(v) > 0 || !v.controls) nativeBar(v);
-    }
+      const todo = [...dirty].filter(([v]) => visible.has(v) && v.isConnected);
+      dirty.clear();
+      const out = todo.map(([v, why]) => [v, planBar(v, why)]); // todas as leituras…
+      for (const [v, plan] of out) applyBar(v, plan);           // …depois todas as escritas
+      for (const v of visible) if (v.isConnected) nativeOnVideo(v);
+    } else dirty.clear();
     if (fullScan) {
       fullScan = false; pending.clear(); touched.clear();
       for (const el of document.querySelectorAll('[data-us-ig-oculto]')) el.removeAttribute('data-us-ig-oculto');
       if (document.body) scanText(document.body);
     } else {
-      for (const n of touched) if (n.isConnected) { const m = markedAncestor(n); if (m) revalidate(m); }
-      for (const n of pending) if (n.isConnected) { const m = markedAncestor(n); if (m) revalidate(m); scanText(n); }
+      // Toda marca que contém um nó mudado é reavaliada (também a que está dentro de outro pendente,
+      // que o percurso do ancestral pularia); o texto novo é percorrido só a partir dos mais externos.
+      const marks = new Set();
+      for (const set of [touched, pending]) for (const n of set) if (n.isConnected) { const m = markedAncestor(n); if (m) marks.add(m); }
+      const outs = outermost(pending);
       pending.clear(); touched.clear();
+      for (const m of marks) revalidate(m);
+      for (const n of outs) scanText(n);
+    }
+  }
+  // Mutação dentro do post de um vídeo visível (camada nova, botão na faixa): recalcula aquele vídeo.
+  const limits = new Map();
+  // (Lote novo acrescentado ao feed, fora do post, não conta.)
+  function touchVideos(r) {
+    for (const v of visible) {
+      if (dirty.get(v) === DOM) continue;
+      let l = limits.get(v);
+      if (!l || !l.isConnected || !l.contains(v)) { l = limitOf(v); limits.set(v, l); }
+      if (l && l.contains(r.target)) touch(v, DOM);
     }
   }
   const mo = new MutationObserver(recs => {
+    const geo = P.barra && visible.size;
     for (const r of recs) {
-      if (r.type === 'characterData') { pending.add(r.target); continue; }
-      for (const n of r.addedNodes) if (n !== style) pending.add(n);
-      if (r.removedNodes.length) touched.add(r.target);
+      if (r.type === 'characterData') pending.add(r.target);
+      else {
+        for (const n of r.addedNodes) if (n !== style) pending.add(n);
+        if (r.removedNodes.length) touched.add(r.target);
+      }
+      if (geo) touchVideos(r);
     }
+    if (limits.size > 32) limits.clear();
     schedule();
   });
   function start() {
@@ -447,7 +582,9 @@ html[data-us-ig-app] [data-us-ig-oculto="app"]{display:none!important}`;
   ];
   function applyAll() {
     applyRootFlags();
+    watchVideos(!!P.barra);
     if (!P.barra) undoBar();
+    touchAll();
     fullScan = true;
     schedule();
   }

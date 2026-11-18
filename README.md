@@ -315,13 +315,13 @@ por vírgula).
 
 ## Instagram — vídeo e feed (`instagram-ux.user.js`)
 
-Versão 1.0.0, só em `https://www.instagram.com/*`. Sempre ligado, sem elementos novos na página; ajustes no menu do gerenciador.
+Versão 1.0.1, só em `https://www.instagram.com/*`. Sempre ligado, sem elementos novos na página; ajustes no menu do gerenciador.
 Não acrescenta nenhum elemento (só um estilo), nem selos, botões ou pílulas. Tudo se ajusta pelo menu do gerenciador (`✓`/`✗`, salvo no valor
 `ajustes`). Reels e Stories continuam lá; nada é clicado nem removido do DOM.
 
 | Função (menu) | Padrão | O que faz |
 |---|---|---|
-| Barra de progresso nos vídeos | ligada | Reels, Stories e vídeos do feed usam os controles nativos do navegador. Só a faixa inferior (~48 px) da camada que o Instagram põe por cima do vídeo é liberada, e ali a barra nativa aparece e recebe clique/arrasto; o resto do vídeo continua com os toques do Instagram (pausar, avançar Story). Controles do Instagram dentro da faixa (botão de som, música/legenda do Reel, campo de resposta do Story) continuam visíveis e tocáveis: a faixa encolhe para o lado livre ou, sem lado largo o bastante, não é liberada naquele vídeo. Vídeo cortado pela borda inferior da tela fica sem faixa até caber. Desligar devolve `controls`, PiP e `controlsList` ao que eram. Ocultos: tela cheia, menu ⋮, legendas e o botão de play central; ficam tempo, play, mudo e volume |
+| Barra de progresso nos vídeos | ligada | Reels, Stories e vídeos do feed usam os controles nativos do navegador. Só a faixa inferior (~48 px) da camada que o Instagram põe por cima do vídeo é liberada, e ali a barra nativa aparece e recebe clique/arrasto; o resto do vídeo continua com os toques do Instagram (pausar, avançar Story). Controles do Instagram dentro da faixa (botão de som, música/legenda do Reel, campo de resposta do Story) continuam visíveis e tocáveis: a faixa encolhe para o lado livre ou, sem lado largo o bastante, não é liberada naquele vídeo. Vídeo cortado pela borda inferior da tela fica sem faixa até caber; vídeo mais alto que a tela ganha a faixa assim que o fundo entra, ainda na rolagem, e a perde quando ela sai pelo topo. Os controles nativos ficam ligados só nos vídeos visíveis na tela e são restaurados (`controls`, PiP, `controlsList`) quando o vídeo sai dela. Desligar devolve `controls`, PiP e `controlsList` ao que eram. Ocultos: tela cheia, menu ⋮, legendas e o botão de play central; ficam tempo, play, mudo e volume |
 | Atalhos | ligados | ←/→ ±5 s, `,`/`.` velocidade −/+0,25× (0,25× a 3×), `M` mudo. Com um diálogo aberto (Story, post) valem só para o vídeo dele: num post de foto aberto não fazem nada e a tecla segue para o Instagram; sem diálogo, o vídeo mais visível. Num Story de vídeo, ←/→ buscam dentro do vídeo (não trocam de Story). Ignorados em campos de texto |
 | Lembrar volume e mudo | ligado | grava volume/mudo quando **você** muda (valor `som`) e aplica a cada vídeo novo, uma vez; sem gesto na página não tira o mudo (o navegador pausaria o autoplay) |
 | Ocultar "Sugestões para você" | ligado | blocos de sugestões no feed e na lateral, e posts "Sugerido para você" |
@@ -331,8 +331,15 @@ Não acrescenta nenhum elemento (só um estilo), nem selos, botões ou pílulas.
 
 Detecção por estrutura, `aria`/`role` e texto exato, nunca por classes geradas; o que é encontrado
 recebe um atributo `data-us-ig-*` e some por CSS. Um `MutationObserver` com debounce (100 ms depois da última
-mudança, no máximo 500 ms depois da primeira) + quadro de animação reage a vídeos e posts novos, e a troca de página sem recarregar é percebida pela
+mudança, no máximo 500 ms depois da primeira) + momento ocioso (`requestIdleCallback`, teto de 50 ms) reage a vídeos e posts novos, e a troca de página sem recarregar é percebida pela
 Navigation API, `popstate` e `history.pushState` (sem polling). O script não anima nada.
+Na rolagem nada é varrido por evento de `scroll`: `IntersectionObserver`s dizem quais vídeos estão na
+tela e quando a faixa passa a caber ou deixa de caber; o furo (relativo à camada) acompanha a rolagem
+sem recálculo, e só o vídeo cuja faixa mudou, o que teve mutação no próprio post e, uma vez, os
+visíveis quando a rolagem para são recalculados. O plano de um vídeo é descartado quando ele sai da
+tela. `python3 tests/bench_instagram.py [outra-versão.user.js]` mede a rolagem infinita
+(`tests/fixtures/instagram-feed-infinito.html`): tempo no script, layouts, chamadas a
+`elementsFromPoint`/`getBoundingClientRect`, tarefas longas e quadros.
 
 Conferido em página real (2026-11-17, deslogado, Reel público de conta institucional, PC 1366×768 e
 celular 412×915): a faixa inferior chega ao vídeo e a barra nativa avança/volta pelo clique e pelo
@@ -381,7 +388,11 @@ python3 smoke_real.py         # páginas reais (rede); resumo em docs/screenshot
   resto continua com o Instagram, inclusive no Story, nenhum elemento novo, sem laço de mutações),
   controles do Instagram na faixa continuam tocáveis (botão de som, link de música do Reel, campo de
   resposta do Story no celular), vídeo reciclado para outro post e vídeo cortado pela borda inferior
-  desfazem o recorte, debounce com teto, desligar e religar pelo menu ao vivo e após recarregar sem
+  desfazem o recorte, controles nativos só nos vídeos na tela e restaurados ao sair, rolagem contínua
+  sem varredura e o carregador da rolagem infinita intacto, plano descartado quando o vídeo sai da tela
+  (controle novo na faixa ao voltar), vídeo mais alto que a tela com furo durante a rolagem (entrando
+  por baixo e por cima, desfeito ao sair pelo topo), texto mudado no post recalcula o furo, marca dentro
+  de um nó pendente reavaliada, debounce com teto, desligar e religar pelo menu ao vivo e após recarregar sem
   itens duplicados (menu simulado como Violentmonkey e como Tampermonkey), PiP e `controlsList`
   restaurados, atalhos e campos editáveis, post de foto aberto não mexe no vídeo do feed, volume
   lembrado entre vídeos sem gravar as próprias mudanças, sem regravar valor igual, sem zerar volume
