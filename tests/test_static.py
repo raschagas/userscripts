@@ -12,6 +12,7 @@ SCRIPTS = sorted(p.name for p in SRC.glob("*.user.js"))
 MUSICA = "musica-links.user.js"
 RAW = "https://raw.githubusercontent.com/raschagas/userscripts/main/src/{}"
 VERSOES = {
+    "autoscroll.user.js": "1.0.0",
     "makerworld-filter.user.js": "1.0.0",
     "youtube-continuar.user.js": "1.0.0",
     "reddit-clean.user.js": "1.0.0",
