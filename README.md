@@ -1,8 +1,8 @@
 # userscripts
 
 Userscripts pessoais para Violentmonkey ou Tampermonkey (Edge, Chrome, Firefox e Edge/Kiwi no
-Android). Cada arquivo em `src/` é autocontido: sem `@require` ou biblioteca externa. Só a continuação de buscas AliExpress faz requisições
-à própria origem; os demais scripts não acessam a rede. Padrão visual próprio: tokens `--us-*`, círculo 12/12 px, véu, painel/gaveta com sliders.
+Android). Cada arquivo em `src/` é autocontido: sem `@require` ou biblioteca externa. Só três scripts usam a rede: a continuação de buscas AliExpress
+(à própria origem), Música (MusicBrainz) e Zotero (os destinos do Zotero); os demais não acessam a rede. Padrão visual próprio: tokens `--us-*`, círculo 12/12 px, véu, painel/gaveta com sliders.
 
 ## Instalar
 
@@ -21,6 +21,7 @@ chegam sozinhas: o gerenciador compara `@version` com o `@updateURL`.
 | Unbloat — limpar sites | oculta Shorts, recomendações e banners no YouTube; banners de app, pop-ups e carrosséis nas lojas | [unbloat.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/unbloat.user.js) |
 | Instagram — vídeo e feed | barra de progresso em Reels, Stories e vídeos do feed, atalhos, volume lembrado; oculta sugestões, patrocinados e banner do app | [instagram-ux.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/instagram-ux.user.js) |
 | Navidrome — letras | faz o botão de letra nativo do player web do Navidrome mostrar também letras `.lrc`/`.yml` ao lado da música; `@match` só `music.georritmo.com` (o endereço da rede local entra pela [regra por aparelho](#sites-extras-por-aparelho)); notas em [docs/navidrome-letras.md](docs/navidrome-letras.md) | [navidrome-letras.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/navidrome-letras.user.js) |
+| Zotero — salvar página | salva a página no Zotero com a referência ABNT e os campos que faltam: Zotero de casa, depois o desktop e, por fim, a Web API; `Alt+Shift+Z` em qualquer página | [zotero-salvar.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/zotero-salvar.user.js) |
 
 Os ajustes ficam no próprio gerenciador, por dispositivo (`GM_getValue`). Para ver ou editar à mão:
 Violentmonkey → script → aba **Valores**; Tampermonkey → script → **Armazenamento**.
@@ -354,6 +355,32 @@ celular deslogado não é tocado (pede clique).
 
 ---
 
+## Zotero — salvar página (`zotero-salvar.user.js`)
+
+Substitui o Zotero Connector. Não faz nada até ser acionado: `Alt+Shift+Z` ou o item **Salvar no
+Zotero** do menu do gerenciador salvam direto em qualquer página; o **botão redondo "Z"** no canto
+inferior direito aparece só em páginas com DOI, `citation_*`, ISBN ou PDF e abre antes uma prévia
+(tipo, título, autores, coleção e o que vai faltar para a ABNT). Ponto verde no botão: a página traz
+tudo o que a ABNT pede; cinza: vai faltar algo.
+
+Na hora de salvar, o script lê só o que a página declara (`citation_*`, Dublin Core, JSON-LD, COinS,
+DOI na URL ou no texto, ISBN, texto selecionado e o link do PDF) e tenta, nesta ordem:
+
+| Destino | Como | Referência ABNT |
+|---|---|---|
+| Zotero de casa | `POST /save` com a captura; ele completa os dados, evita duplicata e grava | a do Zotero, com a lista do que falta |
+| Zotero desktop | aberto no próprio PC: `/connector/ping` e `/connector/saveItems` com o mesmo item (o desktop baixa o PDF) | montada no script com os mesmos dados |
+| Web API (zotero.org) | chave privada do aparelho; procura duplicata por DOI, ISBN ou URL antes de criar; PDF como link | a do Zotero (estilo ABNT) |
+
+O painel diz em qual destino salvou, por que os anteriores falharam, mostra a referência com
+**Copiar ABNT** e os campos que nenhuma fonte trouxe (o item ganha a tag `abnt-incompleto`). Nada é
+inventado: campo sem fonte fica vazio. A coleção escolhida fica lembrada por site.
+
+Menu do gerenciador: **Configurar chave da Web API** (criada em zotero.org/settings/keys, com escrita;
+fica só no `GM_getValue` do aparelho, nunca no código) e **Mostrar/ocultar a pílula neste site**.
+O endereço do Zotero de casa pode ser trocado no valor `bridge_url`. No Edge e no Chrome, o leitor
+de PDF embutido não executa userscripts: abra a página do artigo ou use o Firefox.
+
 ## Testes
 
 Requisitos: Node ≥ 18, Python 3 com `pytest` e `playwright` (Chromium).
@@ -366,7 +393,7 @@ python3 smoke_real.py         # páginas reais (rede); resumo em docs/screenshot
 ```
 
 - `test_static.py`: `node --check`, cabeçalho (namespace, versão, `@downloadURL`/`@updateURL`,
-  grants mínimos, sem `@require`, rede restrita à continuação AliExpress) e escopo de `@match`/`@exclude` por um verificador
+  grants mínimos, sem `@require`, rede restrita à continuação AliExpress, ao MusicBrainz e aos destinos do Zotero) e escopo de `@match`/`@exclude` por um verificador
   próprio (`matchpattern.py`), inclusive que o `@match` de dados pessoais só tem sites genéricos.
 - `test_shop_filter.py`: escala 5 e 10, patrocinado aprovado/reprovado/sem nota, ocultar/esmaecer,
   sliders e toggles mudando o resultado e persistindo após recarregar, rolagem infinita, nó
@@ -400,6 +427,11 @@ python3 smoke_real.py         # páginas reais (rede); resumo em docs/screenshot
   inválido nem tirar o mudo sem gesto, limpeza (inclusive em conteúdo novo, reciclado, só no
   cabeçalho e com regra desligada), Seguindo por carga, por SPA e sem laço, nada fora do Instagram. O vídeo
   de teste (`instagram-video.webm`) é sintético (barras de cor do ffmpeg).
+- `test_zotero_salvar.py`: botão só em artigo, livro e PDF (nada na página comum, nenhuma requisição
+  antes do gatilho), prévia sem salvar, captura enviada ao Zotero de casa (DOI dos metadados vence o
+  do texto, seleção, PDF, coleção lembrada), ABNT de fora sanitizada, queda para o desktop (casa fora
+  do ar ou com erro) e para a Web API (desktop fechado), duplicata sem criar item, chave só no
+  zotero.org, gaveta no celular com alvos de 44 px.
 - `test_links.py`: Letterboxd (TMDB), IMDb, receitas em `@graph`/lista, Google Voos (`q` e `tfs`) ⇄
   Skyscanner, SPA mudando a rota, sem rota na URL não lê o texto da página, alvo de 44 px no PC e
   no celular.

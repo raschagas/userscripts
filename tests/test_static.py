@@ -27,7 +27,9 @@ VERSOES = {
     "shop-filter.user.js": "1.3.1",
     "unbloat.user.js": "1.0.0",
     "instagram-ux.user.js": "1.0.1",
+    "zotero-salvar.user.js": "1.0.0",
 }
+ZOTERO = "zotero-salvar.user.js"
 
 
 def meta_of(name):
@@ -61,9 +63,13 @@ def test_cabecalho(name):
     grants = {"none", "GM_getValue", "GM_setValue", "GM_registerMenuCommand"}
     if name == "instagram-ux.user.js":  # tira o item antigo do menu antes de re-registrar (Violentmonkey)
         grants |= {"GM_unregisterMenuCommand"}
-    if name == MUSICA:  # única exceção: consulta só o MusicBrainz (MBID pela URL)
+    if name == MUSICA:  # consulta só o MusicBrainz (MBID pela URL)
         grants |= {"GM_xmlhttpRequest"}
         assert d["connect"] == ["musicbrainz.org"], d["connect"]
+    elif name == ZOTERO:  # destinos do Zotero: casa, desktop local e Web API
+        grants |= {"GM_xmlhttpRequest"}
+        assert d["connect"] == ["zotero.raschagas.lan", "127.0.0.1", "api.zotero.org"], d["connect"]
+        assert d["match"] == ["*://*/*"] and "noframes" in d
     else:
         assert "connect" not in d, "sem privilégios de rede entre origens"
     assert set(d["grant"]) <= grants, d["grant"]
@@ -90,6 +96,9 @@ def test_sem_rede_no_codigo():
             # Chamadas com variável só nos repasses internos conhecidos.
             dyn = re.findall(r"\b(?:mbGet|mbOne|gm)\(\s*([A-Za-z_$][\w$]*)", code)
             assert set(dyn) <= {"url"}, dyn
+        elif name == ZOTERO:
+            # Só GM_xmlhttpRequest, por um único repasse (gm); detalhes em test_zotero_salvar.py.
+            assert set(calls) == {"GM_xmlhttpRequest"} and code.count("GM_xmlhttpRequest(") == 1, calls
         elif name == "navidrome-letras.user.js":
             # Só a própria origem: envolve o fetch da página e pede getLyricsBySongId com caminho relativo.
             assert not calls, calls
