@@ -10,6 +10,8 @@ from matchpattern import _match_one, metadata, runs_on
 
 SCRIPTS = sorted(p.name for p in SRC.glob("*.user.js"))
 MUSICA = "musica-links.user.js"
+NOTAS = "notas-integradas.user.js"
+IMPRESSAO = "news-reader-impressao.user.js"
 RAW = "https://raw.githubusercontent.com/raschagas/userscripts/main/src/{}"
 VERSOES = {
     "autoscroll.user.js": "1.0.0",
@@ -27,6 +29,8 @@ VERSOES = {
     "shop-filter.user.js": "1.3.1",
     "unbloat.user.js": "1.0.0",
     "instagram-ux.user.js": "1.0.1",
+    NOTAS: "1.0.0",
+    IMPRESSAO: "1.1.0",
 }
 
 
@@ -64,6 +68,12 @@ def test_cabecalho(name):
     if name == MUSICA:  # única exceção: consulta só o MusicBrainz (MBID pela URL)
         grants |= {"GM_xmlhttpRequest"}
         assert d["connect"] == ["musicbrainz.org"], d["connect"]
+    elif name == NOTAS:  # só o News Reader (endereço público; o da rede local é confirmado pelo gerenciador)
+        grants |= {"GM_xmlhttpRequest"}
+        assert d["connect"] == ["reader.georritmo.com"], d["connect"]
+    elif name == IMPRESSAO:  # impressoras de rede variam por aparelho: o código restringe a ipp(s) + PDF da mesma origem
+        grants |= {"GM_xmlhttpRequest"}
+        assert d["connect"] == ["*"], d["connect"]
     else:
         assert "connect" not in d, "sem privilégios de rede entre origens"
     assert set(d["grant"]) <= grants, d["grant"]
@@ -97,6 +107,17 @@ def test_sem_rede_no_codigo():
             assert re.search(r"credentials\s*:\s*'same-origin'", code)
             assert "redirect: 'error'" in code
             assert "url.origin !== location.origin" in code and "method !== 'GET'" in code
+        elif name == NOTAS:
+            assert set(calls) == {"GM_xmlhttpRequest"} and len(calls) == 1, calls
+            assert "method: 'GET'" in code and not re.search(r"method\s*:\s*['\"](?!GET)", code)
+            assert re.search(r"anonymous\s*:\s*true", code), "sem cookies"
+            assert "url = `${b}/api/reviews/notes?${qs}`" in code   # só o endpoint de notas
+        elif name == IMPRESSAO:
+            assert set(calls) == {"GM_xmlhttpRequest"}, calls
+            # Rede só para: IPP (POST application/ipp a ipp/ipps validado) e o PDF da mesma origem sob /api/print/.
+            assert "const IPP_URI = /^ipps?:\\/\\/" in code
+            assert "pdfUrl.origin !== location.origin || !pdfUrl.pathname.startsWith(BASE + '/api/print/')" in code
+            assert "isTrusted" in code
         elif name == "shop-filter.user.js":
             assert calls == ["fetch"], calls
             assert re.search(r"credentials\s*:\s*'same-origin'", code)
@@ -293,3 +314,41 @@ def test_instagram_nunca_clica_nem_faz_polling():
     code = (SRC / IG).read_text(encoding="utf-8")
     assert not re.search(r"\.(click|submit|requestSubmit|dispatchEvent)\s*\(", code)
     assert "setInterval" not in code
+
+
+@pytest.mark.parametrize("url,expected", [
+    ("https://www.imdb.com/title/tt0000001/", True),
+    ("https://www.imdb.com/pt/title/tt0000001/", True),
+    ("https://www.themoviedb.org/movie/1-exemplo", True),
+    ("https://www.themoviedb.org/tv/2-exemplo", True),
+    ("https://letterboxd.com/film/filme-exemplo/", True),
+    ("https://www.rottentomatoes.com/m/filme_exemplo", True),
+    ("https://www.metacritic.com/game/jogo-exemplo/", True),
+    ("https://opencritic.com/game/1/jogo-exemplo", True),
+    ("https://www.igdb.com/games/jogo-exemplo", True),
+    ("https://rawg.io/games/jogo-exemplo", True),
+    ("https://letterboxd.com/usuario/", False),
+    ("https://www.imdb.com/chart/top/", False),
+    ("https://www.metacritic.com/browse/game/", False),
+    ("https://www.google.com/search?q=imdb", False),
+    ("https://www.camara.leg.br/", False),
+])
+def test_notas_escopo(url, expected):
+    assert runs_on(meta_of(NOTAS), url) is expected, url
+
+
+@pytest.mark.parametrize("name", [NOTAS, IMPRESSAO])
+def test_rede_excludes_camara(name):
+    m = meta_of(name)
+    assert [v for k, v in m if k == "exclude"] == ["*://camara.leg.br/*", "*://*.camara.leg.br/*",
+                                                   "*://camara.gov.br/*", "*://*.camara.gov.br/*"]
+    assert any(k == "noframes" for k, _ in m)
+
+
+def test_impressao_so_no_news_reader_publico():
+    assert [v for k, v in meta_of(IMPRESSAO) if k == "match"] == ["https://reader.georritmo.com/*"]
+
+
+def test_impressao_no_mundo_isolado():
+    # No contexto da página, ela poderia trocar Date.now/Element.prototype.closest e burlar o gesto.
+    assert [v for k, v in meta_of(IMPRESSAO) if k == "inject-into"] == ["content"]
