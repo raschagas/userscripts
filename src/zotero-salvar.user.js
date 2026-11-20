@@ -391,7 +391,7 @@
   async function colecoesCasa() {
     const r = await gm({ url: `${gv('bridge_url', BRIDGE)}/collections`, timeout: 4000 });
     const j = r.ok && parse(r.text);
-    const l = j && (Array.isArray(j) ? j : j.collections);
+    const l = j && (Array.isArray(j) ? j : j.colecoes || j.collections);
     return Array.isArray(l) ? l.filter((c) => c && c.key && c.name).map((c) => ({ key: c.key, name: c.name, parent: c.parentCollection || c.parent || '' })) : null;
   }
   async function alvosDesktop() {
@@ -419,12 +419,12 @@
     const corpo = {
       url: c.url, title: it.title || c.titulo, html_meta: c.m, doi: c.doi || undefined, isbn: c.isbn || undefined,
       selection: c.sel || undefined, pdf_url: c.pdf || undefined,
-      collection: colKey || undefined, collection_name: nome || undefined,
+      collection: colKey || nome || undefined, collection_name: nome || undefined,
     };
     const r = await gm({ method: 'POST', url: `${B}/save`, headers: { 'Content-Type': 'application/json' }, data: JSON.stringify(corpo), timeout: 90000 });
     const j = r.ok && parse(r.text);
     if (!j || !j.key) return { falha: r.status ? `respondeu ${r.status}` : r.erro || 'sem resposta' };
-    return { key: j.key, abnt: sanitiza(j.abnt), abntFonte: 'zotero', faltando: Array.isArray(j.faltando) ? j.faltando.map(clean) : [], duplicata: !!j.duplicata, fontes: j.fontes };
+    return { key: j.key, abnt: sanitiza(j.abnt), abntFonte: 'zotero', faltando: Array.isArray(j.faltando) ? j.faltando.map((f) => clean(f && typeof f === 'object' ? f.rotulo || f.campo : f)).filter(Boolean) : [], duplicata: !!j.duplicata, fontes: j.fontes };
   }
 
   async function viaDesktop(c, it, nome, passo) {

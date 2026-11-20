@@ -52,12 +52,13 @@ class Destinos:
             if u.endswith("/health"):
                 return {"status": 200, "text": '{"ok": true}'}
             if u.endswith("/collections"):
-                return {"status": 200, "text": json.dumps([{"key": "COL1", "name": "Testes"}, {"key": "COL2", "name": "Sub", "parentCollection": "COL1"}])}
+                return {"status": 200, "text": json.dumps({"colecoes": [{"key": "COL1", "name": "Testes", "parent": ""}, {"key": "COL2", "name": "Sub", "parent": "COL1"}]})}
             if u.endswith("/save"):
                 if self.casa == "erro":
                     return {"status": 500, "text": "falhou"}
-                return {"status": 200, "text": json.dumps({"key": "CASA0001", "abnt": ABNT_CASA, "faltando": [],
-                                                           "fontes": [], "duplicata": False, "destino": "casa"})}
+                return {"status": 200, "text": json.dumps({"key": "CASA0001", "abnt": ABNT_CASA, "faltando": [{"campo": "issue", "rotulo": "número"}],
+                                                           "fontes": [], "duplicata": False,
+                                                           "destino": {"via": "bridge", "biblioteca": "zotero-web-api", "colecao": "", "pdf": None}})}
         if u.startswith("http://127.0.0.1:23119/connector/"):
             if self.desktop == "fechado":
                 return {"erro": "rede"}
@@ -176,7 +177,7 @@ def test_casa_recebe_captura_completa(make_ctx):
     d = Destinos(casa="ok")
     page = abre(make_ctx, ART, "zotero-artigo.html", d)
     txt = salva(page, "pilula")
-    assert "Salvo no Zotero de casa" in txt
+    assert "Salvo no Zotero de casa" in txt and "número" in txt and "object" not in txt
     b = d.corpo("/save")
     assert b["url"] == ART and b["doi"] == "10.5555/exemplo.2024.042"
     assert b["pdf_url"] == "https://revista.exemplo.org/artigo/42.pdf"
@@ -219,6 +220,7 @@ def test_colecao_lembrada_por_site(make_ctx):
     salva(page)
     b = d.corpo("/save")
     assert b["collection"] == "COL1" and b["collection_name"] == "Testes"
+    assert not any("127.0.0.1" in u for u in d.urls()), "lista de coleções vem do Zotero de casa"
     sh(page, "const s = r.querySelector('select'); s.value = 'Sub'; s.dispatchEvent(new Event('change'));")
     assert gm(page, "colecoes") == {"revista.exemplo.org": "Sub"}
 
