@@ -1,8 +1,9 @@
 # userscripts
 
 Userscripts pessoais para Violentmonkey ou Tampermonkey (Edge, Chrome, Firefox e Edge/Kiwi no
-Android). Cada arquivo em `src/` é autocontido: sem `@require` ou biblioteca externa. Só três scripts usam a rede: a continuação de buscas AliExpress
-(à própria origem), Música (MusicBrainz) e Zotero (os destinos do Zotero); os demais não acessam a rede. Padrão visual próprio: tokens `--us-*`, círculo 12/12 px, véu, painel/gaveta com sliders.
+Android). Cada arquivo em `src/` é autocontido: sem `@require` ou biblioteca externa. Acessam a rede só: a continuação de buscas
+AliExpress (própria origem), Música (web service do MusicBrainz), Notas integradas (o próprio News Reader), Impressão direta
+(impressoras de rede cadastradas no aparelho e o PDF do próprio News Reader) e Zotero (os destinos do Zotero); os demais não acessam a rede. Padrão visual próprio: tokens `--us-*`, círculo 12/12 px, véu, painel/gaveta com sliders.
 
 ## Instalar
 
@@ -20,6 +21,8 @@ chegam sozinhas: o gerenciador compara `@version` com o `@updateURL`.
 | Cookies | aceita e fecha avisos de cookies/LGPD | [cookies-aceitar.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/cookies-aceitar.user.js) |
 | Unbloat — limpar sites | oculta Shorts, recomendações e banners no YouTube; banners de app, pop-ups e carrosséis nas lojas | [unbloat.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/unbloat.user.js) |
 | Instagram — vídeo e feed | barra de progresso em Reels, Stories e vídeos do feed, atalhos, volume lembrado; oculta sugestões, patrocinados e banner do app | [instagram-ux.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/instagram-ux.user.js) |
+| Notas integradas | no IMDb, TMDB, Letterboxd, Rotten Tomatoes, Metacritic, OpenCritic, IGDB e RAWG: pílula no canto com as notas que o News Reader já guarda (sem a do próprio site) e, onde o site não mostra, onde assistir no Brasil | [notas-integradas.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/notas-integradas.user.js) |
+| News Reader — impressão direta | o botão Imprimir do News Reader envia o PDF direto à impressora de rede (IPP) cadastrada no aparelho; sem impressora, abre a janela de impressão | [news-reader-impressao.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/news-reader-impressao.user.js) |
 | Navidrome — letras | faz o botão de letra nativo do player web do Navidrome mostrar também letras `.lrc`/`.yml` ao lado da música; `@match` só `music.georritmo.com` (o endereço da rede local entra pela [regra por aparelho](#sites-extras-por-aparelho)); notas em [docs/navidrome-letras.md](docs/navidrome-letras.md) | [navidrome-letras.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/navidrome-letras.user.js) |
 | Zotero — salvar página | salva a página no Zotero com a referência ABNT e os campos que faltam: Zotero de casa, depois o desktop e, por fim, a Web API; `Alt+Shift+Z` em qualquer página | [zotero-salvar.user.js](https://raw.githubusercontent.com/raschagas/userscripts/main/src/zotero-salvar.user.js) |
 
@@ -28,6 +31,11 @@ Violentmonkey → script → aba **Valores**; Tampermonkey → script → **Arma
 
 Para desligar um script inteiro: desative-o no painel do gerenciador. Para desligar só num site, use o
 item de menu do próprio script (ícone do gerenciador → nome do script).
+
+### Celular
+
+No Android, use o **Firefox** com o **Violentmonkey** (extensões oficiais no Firefox para Android). O Chrome
+para Android não aceita extensões. O layout de celular (412 px) de cada script é testado.
 
 ### Sites extras por aparelho
 
@@ -238,6 +246,81 @@ Alternativas prontas avaliadas: [arrsearch](https://github.com/trossr32/sonarr-r
 (só musicbrainz.org, adiciona por API). RYM e AOTY bloqueiam navegador automatizado (Cloudflare): a leitura
 deles é testada em fixture.
 
+## Notas integradas (`notas-integradas.user.js`)
+
+Nas páginas de filme, série ou jogo do **IMDb, TMDB, Letterboxd, Rotten Tomatoes, Metacritic, OpenCritic,
+IGDB e RAWG**, uma pílula no canto inferior direito ("NR 62 · 4 notas · onde assistir") abre um painel (PC)
+ou uma gaveta inferior (celular) com cada nota que o News Reader já guarda: fonte, crítica ou usuários,
+nota como a fonte publica e uma barra de 0 a 100. Cada linha abre a fonte. Sem nota no News Reader, nada
+aparece (nem só o "onde assistir"); erro ou resposta inválida do News Reader também não mostra nada. Em
+claro e escuro, alvos de 44 px; ao abrir, o foco vai ao botão fechar e `Esc` fecha e devolve o foco à pílula.
+
+- **Sem repetir o site**: a nota do próprio site nunca aparece (o News Reader marca qual é; no Rotten
+  Tomatoes somem Tomatometer e Popcorn).
+- **Onde assistir no Brasil**, caso a caso, só onde o site não mostra o do Brasil (conferido em página
+  real, 2026-11): aparece no **IMDb**, no **Rotten Tomatoes** e no **Metacritic** (mostram serviços dos
+  EUA); não aparece no **TMDB** ("Assista agora" já é do Brasil) nem no **Letterboxd** (JustWatch do
+  país). Jogos não têm.
+- No Letterboxd, a página informa os ids do IMDb/TMDB e o script os envia: o casamento é exato, não por
+  nome. Nos demais vale o id ou o endereço da página.
+- No Letterboxd e no IMDb a pílula sobe acima do chip do georritmo-links.
+- Em sites SPA, ao trocar de página (inclusive voltar/avançar) as notas do item anterior saem antes da
+  nova consulta.
+- Música ainda não: o endpoint do News Reader só tem filmes, séries e jogos.
+
+**O que vai à rede**: uma consulta `GET <News Reader>/api/reviews/notes?url=<endereço da página sem
+parâmetros>` por página (e quando um site SPA troca de página), sem cookies (`anonymous`). O endpoint só
+lê o banco do News Reader: nenhuma chave, nenhuma API externa, nenhum texto de resenha.
+
+**Configuração por aparelho** (menu do gerenciador → *Endereço do News Reader…*): padrão
+`https://reader.georritmo.com`; o endereço da rede local também serve (o Tampermonkey pede para liberar o
+domínio na primeira vez; o `@connect` publicado só lista o público). Vazio = desligado. Menu: *Esconder
+as notas neste site* (vale na hora, sem nova consulta, nem pelo menu de endereço; desfazer: *Mostrar as
+notas neste site*).
+
+## News Reader — impressão direta (`news-reader-impressao.user.js`)
+
+O botão **Imprimir** do News Reader imprime o artigo direto numa impressora de rede deste aparelho, sem
+a janela de impressão. A página não enxerga as impressoras nem imprime sem a janela (`window.print()`
+não aceita parâmetros), então o script guarda **por aparelho** (`GM_getValue`) a lista de impressoras
+cadastrada em *Configurações → Impressão* do News Reader e envia o PDF que o próprio News Reader gera
+por **IPP** (RFC 8011, Print-Job `application/pdf`). Impressora não cadastrada, sem resposta ou que
+recusa ⇒ a página abre a janela de impressão (com o formato do modo escolhido).
+
+Defesas (qualquer script da página pode disparar os eventos da ponte, mas não forja `isTrusted`):
+
+- roda no mundo isolado do gerenciador (`@inject-into content`), onde a página não troca `Date.now`
+  nem `Element.prototype.closest` para burlar a checagem do gesto;
+- trabalho só até 5 s depois de um clique confiável em Imprimir, um clique = um trabalho;
+- o PDF vem só da mesma origem e de `/api/print/` (também depois de redirecionamento), com
+  `Content-Type: application/pdf` e começando com `%PDF-`;
+- sondagem e cadastro só com gesto confiável em *Configurações → Impressão*, um gesto = uma sondagem ou
+  um cadastro; só endereços `ipp://`/`ipps://` sem usuário (`@`) nem IPv6 (`[…]`), até 20 impressoras,
+  lista revalidada;
+- o pedido IPP vai sem cookies; o nome do trabalho é cortado em 255 bytes sem partir caractere;
+- resposta IPP estrita: truncada, sem a tag de fim, de outra versão ou com `request-id` diferente falha
+  (a página abre a janela) em vez de ficar esperando.
+
+Tempo: a página desiste do trabalho em 30 s e abre a janela de impressão; o script dá 20 s ao PDF e 8 s
+ao envio IPP, para responder antes. Se a impressora aceitar o trabalho mas a resposta não chegar a tempo,
+a página abre a janela de impressão e o artigo pode sair duas vezes.
+
+`@connect *` porque o endereço das impressoras varia por aparelho; o código só fala com as impressoras
+cadastradas e com o próprio News Reader. `@match` só o endereço público; o da rede local entra pela
+[regra por aparelho](#sites-extras-por-aparelho). Menu: *Desligar a impressão direta neste site*,
+*Esquecer as impressoras deste aparelho*.
+
+**Onde funciona (2026-11-19)**: precisa de impressora de rede que aceite IPP com PDF (IPP Everywhere/AirPrint)
+e esteja ao alcance do aparelho.
+
+- **Casa**: não há impressora conectada (nenhum `_ipp._tcp`/`_ipps._tcp` anunciado na rede); o botão
+  abre a janela de impressão.
+- **Trabalho**: a impressora não foi identificada nem confirmada como IPP direto; vale a janela de
+  impressão do navegador (com o formato do `@page`). Se um dia ela aceitar IPP, basta cadastrá-la em
+  *Configurações → Impressão* naquele aparelho e usar *Testar*.
+- Testado contra uma impressora IPP de bancada (`tests/ipp/`): sondagem, cadastro, Print-Job com
+  `sides`/`media`/`print-scaling` e PDF no corpo, e cada recusa acima.
+
 ## Cookies (`cookies-aceitar.user.js`)
 
 Clica em "aceitar" nos avisos de cookies e some com eles: OneTrust, Cookiebot, Didomi, Quantcast,
@@ -441,6 +524,18 @@ python3 smoke_real.py         # páginas reais (rede); resumo em docs/screenshot
   do texto, seleção, PDF, coleção lembrada), ABNT de fora sanitizada, queda para o desktop (casa fora
   do ar ou com erro) e para a Web API (desktop fechado), duplicata sem criar item, chave só no
   zotero.org, gaveta no celular com alvos de 44 px.
+- `test_notas.py`: parâmetros enviados (ids do Letterboxd, `media=tv` em série), nota do próprio site
+  omitida, onde assistir só nos sites sem o bloco do Brasil, sem nota/ambíguo/só a própria/só onde assistir
+  = nada na página, HTTP 500 e JSON inválido = nada e sem erro de página, resposta como texto (nunca HTML)
+  e `javascript:` nunca vira link, endereço vazio desliga, endereço da rede local, pílula acima do chip do
+  georritmo-links, painel e gaveta (alvos ≥ 44 px inclusive o link de onde assistir, foco no fechar, `Esc`
+  pelo teclado devolve o foco à pílula), troca de página em SPA (notas antigas saem antes da resposta) e
+  voltar/avançar, esconder no site (o menu de endereço não reativa).
+- `test_impressao.py`: o script no Node contra `tests/ipp/mock_printer.py` (127.0.0.1): recusas sem gesto,
+  um gesto = uma sondagem/um cadastro, só `ipp(s)://` sem usuário nem IPv6, só PDF do News Reader (inclusive
+  depois de redirecionamento), lista revalidada, resposta IPP truncada, só com o cabeçalho de 8 bytes, sem a
+  tag de fim ou com `request-id` diferente, POST sem cookies em `Blob`, nome do trabalho ≤ 255 bytes com
+  título longo acentuado, Print-Job completo.
 - `test_links.py`: Letterboxd (TMDB), IMDb, receitas em `@graph`/lista, Google Voos (`q` e `tfs`) ⇄
   Skyscanner, SPA mudando a rota, sem rota na URL não lê o texto da página, alvo de 44 px no PC e
   no celular.
