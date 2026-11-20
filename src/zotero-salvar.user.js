@@ -5,6 +5,8 @@
 // @description  Salva a página atual no Zotero com a referência ABNT completa: Zotero de casa primeiro, depois o Zotero desktop e, por fim, a Web API do zotero.org.
 // @match        *://*/*
 // @noframes
+// @inject-into content
+// @sandbox     DOM
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
@@ -48,7 +50,7 @@
           ontimeout: () => fim({ ok: false, status: 0, text: '', erro: 'tempo esgotado' }),
           onabort: () => fim({ ok: false, status: 0, text: '', erro: 'cancelado' }),
         });
-      } catch (e) { fim({ ok: false, status: 0, text: '', erro: 'sem resposta' }); }
+      } catch (e) { fim({ ok: false, status: 0, text: '', erro: 'não enviado' }); }
     });
   }
 
@@ -87,7 +89,12 @@
   }
 
   const DOI_RE = /\b(10\.\d{4,9}\/[^\s"'<>]+[^\s"'<>.,;:)\]])/;
-  const normDoi = (s) => { const m = DOI_RE.exec(decodeURIComponent(String(s || ''))); return m ? m[1] : ''; };
+  const normDoi = (s) => {
+    let t = String(s || '');
+    try { t = decodeURIComponent(t); } catch (e) { /* escape inválido: usa o texto cru */ }
+    const m = DOI_RE.exec(t);
+    return m ? m[1] : '';
+  };
   function isbnOk(raw) {
     const s = String(raw || '').toUpperCase().replace(/[^0-9X]/g, '');
     if (s.length === 10) {
@@ -100,6 +107,24 @@
     }
     return '';
   }
+  // ISBN-10 vira ISBN-13 (prefixo 978) para comparar; inválido vira ''.
+  function isbn13(raw) {
+    const v = isbnOk(raw);
+    if (v.length !== 10) return v;
+    const b = `978${v.slice(0, 9)}`;
+    let t = 0; for (let i = 0; i < 12; i++) t += +b[i] * (i % 2 ? 3 : 1);
+    return b + ((10 - (t % 10)) % 10);
+  }
+  // Só http/https, relativo resolvido contra a página.
+  const urlWeb = (v) => { try { const u = new URL(String(v || ''), location.href); return v && /^https?:$/.test(u.protocol) ? u.href : ''; } catch (e) { return ''; } };
+  // Valores JSON-LD podem vir como texto, número, lista ou objeto ({"@value"} ou {name}).
+  const txt = (v, d = 0) => {
+    if (v == null || d > 4) return '';
+    if (typeof v === 'string' || typeof v === 'number') return clean(v);
+    if (Array.isArray(v)) { for (const x of v) { const t = txt(x, d + 1); if (t) return t; } return ''; }
+    if (typeof v === 'object') return txt(v['@value'] !== undefined ? v['@value'] : v.name, d + 1);
+    return '';
+  };
   const pdfAqui = () => /pdf/i.test(document.contentType || '');
 
   // Só metadados declarados na página (barato, roda uma vez no carregamento).
@@ -130,21 +155,21 @@
     const isbnMeta = isbn;
 
     if (comTexto && (!doi || !isbn)) {
-      const txt = (document.body ? document.body.textContent : '').slice(0, 200000);
+      const corpoTxt = (document.body ? document.body.textContent : '').slice(0, 200000);
       if (!doi) {
-        const todos = new Set((txt.match(new RegExp(DOI_RE.source, 'g')) || []).map(normDoi));
+        const todos = new Set((corpoTxt.match(new RegExp(DOI_RE.source, 'g')) || []).map(normDoi));
         if (todos.size === 1) doi = [...todos][0];
       }
       if (!isbn) {
         const achados = new Set();
-        for (const m of txt.matchAll(/ISBN(?:-1[03])?:?\s*([0-9][0-9\- ]{8,16}[0-9Xx])/g)) { const v = isbnOk(m[1]); if (v) achados.add(v); }
+        for (const m of corpoTxt.matchAll(/ISBN(?:-1[03])?:?\s*([0-9][0-9\- ]{8,16}[0-9Xx])/g)) { const v = isbnOk(m[1]); if (v) achados.add(v); }
         if (achados.size === 1) isbn = [...achados][0];
       }
     }
 
-    let pdf = (cit.citation_pdf_url || [])[0] || '';
-    if (!pdf && pdfAqui()) pdf = location.href;
-    if (!pdf) { const l = document.querySelector('link[type="application/pdf"][href]'); if (l) pdf = l.href; }
+    let pdf = urlWeb((cit.citation_pdf_url || [])[0]);
+    if (!pdf && pdfAqui()) pdf = urlWeb(location.href);
+    if (!pdf) { const l = document.querySelector('link[type="application/pdf"][href]'); if (l) pdf = urlWeb(l.getAttribute('href')); }
 
     const sel = clean((window.getSelection && String(window.getSelection())) || '').slice(0, 5000);
     const titulo = clean(document.title);
@@ -177,7 +202,6 @@
     thesis: 'Tese ou dissertação', report: 'Relatório', preprint: 'Preprint', webpage: 'Página web', document: 'Documento',
   };
   const SUFIXO = /^(filho|filha|júnior|junior|jr\.?|neto|neta|sobrinho|sobrinha)$/i;
-  const PARTICULA = /^(da|de|do|das|dos|e|van|von|der|den|del|della|di|du|la|le)$/i;
 
   function pessoa(s, tipo) {
     s = clean(s).replace(/\s*\(.*?\)\s*$/, '');
@@ -187,15 +211,17 @@
     if (p.length === 1) return { creatorType: tipo, name: s };
     let i = p.length - 1;
     if (SUFIXO.test(p[i]) && i > 1) i--;
-    while (i > 1 && PARTICULA.test(p[i - 1])) i--;
+    // NBR 6023: partícula fica com o prenome (João da Silva → SILVA, João da); sufixo fica no sobrenome.
     return { creatorType: tipo, firstName: p.slice(0, i).join(' '), lastName: p.slice(i).join(' ') };
   }
   function ldPessoa(a, tipo) {
     if (!a) return null;
     if (typeof a === 'string') return pessoa(a, tipo);
-    if (a.familyName) return { creatorType: tipo, lastName: clean(a.familyName), firstName: clean(a.givenName) };
-    if (ldType(a).includes('Organization') && a.name) return { creatorType: tipo, name: clean(a.name) };
-    return a.name ? pessoa(a.name, tipo) : null;
+    if (typeof a !== 'object') return null;
+    const fam = txt(a.familyName), nm = txt(a.name);
+    if (fam) return { creatorType: tipo, lastName: fam, firstName: txt(a.givenName) };
+    if (ldType(a).includes('Organization') && nm) return { creatorType: tipo, name: nm };
+    return nm ? pessoa(nm, tipo) : null;
   }
   const dataIso = (s) => { s = clean(s); const m = /^(\d{4})[/-](\d{1,2})(?:[/-](\d{1,2}))?/.exec(s); return m ? [m[1], m[2].padStart(2, '0'), m[3] && m[3].padStart(2, '0')].filter(Boolean).join('-') : s; };
   const ano = (s) => { const m = /\b(1[5-9]\d{2}|20\d{2})\b/.exec(String(s || '')); return m ? m[1] : ''; };
@@ -224,7 +250,7 @@
 
     poe('title', um(ci, 'citation_title'), 'citation');
     poe('title', um(dc, 'dc.title', 'dcterms.title'), 'dublin core');
-    poe('title', ld.headline || ld.name, 'json-ld');
+    poe('title', txt(ld.headline) || txt(ld.name), 'json-ld');
     poe('title', um(og, 'og:title'), 'open graph');
     poe('title', c.titulo, 'título da página');
 
@@ -240,12 +266,12 @@
     poe('date', dt && dataIso(dt), 'citation');
     poe('date', dataIso(um(dc, 'dc.date', 'dcterms.issued', 'dcterms.date', 'dc.date.issued')), 'dublin core');
     poe('date', dataIso(um(pr, 'prism.publicationdate')), 'prism');
-    poe('date', ld.datePublished && dataIso(ld.datePublished), 'json-ld');
+    poe('date', txt(ld.datePublished) && dataIso(txt(ld.datePublished)), 'json-ld');
     poe('date', dataIso(um(og, 'article:published_time')), 'open graph');
 
     const parte = [].concat(ld.isPartOf || [])[0] || {};
     poe('publicationTitle', um(ci, 'citation_journal_title') || um(pr, 'prism.publicationname'), 'citation');
-    poe('publicationTitle', parte.name, 'json-ld');
+    poe('publicationTitle', txt(parte.name), 'json-ld');
     poe('journalAbbreviation', um(ci, 'citation_journal_abbrev'), 'citation');
     poe('volume', um(ci, 'citation_volume') || um(pr, 'prism.volume'), 'citation');
     poe('issue', um(ci, 'citation_issue') || um(pr, 'prism.number'), 'citation');
@@ -254,15 +280,15 @@
     poe('ISSN', um(ci, 'citation_issn') || um(pr, 'prism.issn'), 'citation');
     const pub = [].concat(ld.publisher || [])[0];
     poe('publisher', um(ci, 'citation_publisher') || um(dc, 'dc.publisher', 'dcterms.publisher'), 'citation');
-    poe('publisher', pub && (typeof pub === 'string' ? pub : pub.name), 'json-ld');
+    poe('publisher', txt(pub), 'json-ld');
     poe('bookTitle', um(ci, 'citation_book_title'), 'citation');
     poe('university', um(ci, 'citation_dissertation_institution'), 'citation');
     poe('institution', um(ci, 'citation_technical_report_institution'), 'citation');
     poe('reportNumber', um(ci, 'citation_technical_report_number'), 'citation');
     poe('conferenceName', um(ci, 'citation_conference_title'), 'citation');
     poe('proceedingsTitle', um(ci, 'citation_conference_title'), 'citation');
-    poe('edition', ld.bookEdition, 'json-ld');
-    poe('numPages', ld.numberOfPages, 'json-ld');
+    poe('edition', txt(ld.bookEdition), 'json-ld');
+    poe('numPages', txt(ld.numberOfPages), 'json-ld');
     if (tipo === 'preprint') { poe('repository', 'arXiv', 'citation'); poe('archiveID', `arXiv:${um(ci, 'citation_arxiv_id')}`, 'citation'); }
     poe('abstractNote', um(ci, 'citation_abstract'), 'citation');
     if (tipo !== 'webpage') poe('abstractNote', um(dc, 'dc.description', 'dcterms.abstract'), 'dublin core');
@@ -330,7 +356,8 @@
         return `${ini}${e(it.title)}. <i>In</i>: ${org}${neg(it.bookTitle || '')}. ${lugar(it.place, it.publisher)}, ${y}. ${pag(it.pages)}.${acesso}`.replace(/\. \./g, '.');
       }
       case 'thesis':
-        return `${ini}${titPrincipal(it.title)}. ${y}. ${j(it.thesisType && e(it.thesisType), it.university && e(it.university), it.place && e(it.place), y)}.${acesso}`;
+        // NBR 6023 (7.9): ano de depósito após o título e data da defesa depois da vinculação acadêmica.
+        return `${ini}${titPrincipal(it.title)}. ${y}. ${it.thesisType ? `${e(it.thesisType)} – ` : ''}${j(it.university && e(it.university), it.place && e(it.place), y)}.${acesso}`;
       case 'report':
         return `${ini}${titPrincipal(it.title)}. ${lugar(it.place, it.institution)}, ${y}.${acesso}`;
       case 'conferencePaper':
@@ -346,9 +373,10 @@
   function sanitiza(html) {
     const doc = new DOMParser().parseFromString(`<div>${String(html || '')}</div>`, 'text/html');
     const ok = { B: 'b', STRONG: 'b', I: 'i', EM: 'i', SUP: 'sup', SUB: 'sub' };
+    const fora = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'NOSCRIPT']);
     const walk = (n) => Array.from(n.childNodes).map((x) => {
       if (x.nodeType === 3) return esc(x.nodeValue);
-      if (x.nodeType !== 1) return '';
+      if (x.nodeType !== 1 || fora.has(x.tagName)) return '';
       const t = ok[x.tagName];
       const dentro = walk(x);
       if (x.style && /italic/.test(x.style.fontStyle)) return `<i>${dentro}</i>`;
@@ -359,8 +387,17 @@
   }
 
   // ---------------------------------------------------------------- coleções
-  const colecaoDoSite = () => (gv('colecoes', {}) || {})[HOST] || '';
-  const guardaColecao = (nome) => { const m = gv('colecoes', {}) || {}; if (nome) m[HOST] = nome; else delete m[HOST]; sv('colecoes', m); };
+  // Por site: { key, name, origem } (origem = de onde veio a chave: casa, web ou desktop). Valor antigo em texto = só o nome.
+  const colecaoDoSite = () => {
+    const v = (gv('colecoes', {}) || {})[HOST];
+    if (typeof v === 'string') return v ? { key: '', name: v, origem: '' } : null;
+    return v && typeof v === 'object' && v.name ? { key: String(v.key || ''), name: String(v.name), origem: String(v.origem || '') } : null;
+  };
+  const guardaColecao = (col) => {
+    const m = gv('colecoes', {}) || {};
+    if (col && col.name) m[HOST] = { key: col.key || '', name: col.name, origem: col.origem || '' }; else delete m[HOST];
+    sv('colecoes', m);
+  };
   function arvore(lista) {
     const filhos = {};
     for (const c of lista) (filhos[c.parent || ''] = filhos[c.parent || ''] || []).push(c);
@@ -369,24 +406,34 @@
     desce('', 0);
     return out;
   }
+  // null = sem chave; { erro } = falha de rede, chave recusada ou outra resposta; senão as credenciais.
   async function credenciais() {
     const key = gv('zotero_key', '');
     if (!key) return null;
     let uid = gv('zotero_user', '');
     if (!uid) {
       const r = await gm({ url: `${API}/keys/current`, headers: { 'Zotero-API-Key': key, 'Zotero-API-Version': '3' }, anonymous: true });
+      if (!r.status) return { erro: 'zotero.org sem resposta' };
+      if (r.status === 401 || r.status === 403) return { erro: 'chave recusada' };
       const j = r.ok && parse(r.text);
-      if (!j || !j.userID) return null;
+      if (!j || !j.userID) return { erro: `zotero.org respondeu ${r.status}` };
       uid = String(j.userID); sv('zotero_user', uid); sv('zotero_username', j.username || '');
     }
     return { key, uid, h: { 'Zotero-API-Key': key, 'Zotero-API-Version': '3' } };
   }
   async function colecoesWeb() {
     const cr = await credenciais();
-    if (!cr) return null;
-    const r = await gm({ url: `${API}/users/${cr.uid}/collections?limit=100&format=json`, headers: cr.h, anonymous: true });
-    const j = r.ok && parse(r.text);
-    return Array.isArray(j) ? j.map((c) => ({ key: c.key, name: c.data.name, parent: c.data.parentCollection || '' })) : null;
+    if (!cr || cr.erro) return null;
+    const out = [];
+    for (let pg = 0; pg < 10; pg++) {
+      const r = await gm({ url: `${API}/users/${cr.uid}/collections?limit=100&start=${pg * 100}&format=json`, headers: cr.h, anonymous: true });
+      const j = r.ok && parse(r.text);
+      // Página que falha = lista incompleta: não serve de cache nem para resolver a coleção.
+      if (!Array.isArray(j)) return null;
+      for (const c of j) if (c && c.key && c.data && c.data.name) out.push({ key: c.key, name: c.data.name, parent: c.data.parentCollection || '' });
+      if (j.length < 100) break;
+    }
+    return out;
   }
   async function colecoesCasa() {
     const r = await gm({ url: `${gv('bridge_url', BRIDGE)}/collections`, timeout: 4000 });
@@ -399,85 +446,148 @@
     const j = r.ok && parse(r.text);
     return j && Array.isArray(j.targets) ? j.targets : null;
   }
+  // Cada origem tem o próprio cache: chave do Zotero de casa não serve à Web API, nem o contrário.
   async function listaColecoes() {
-    const l = (await colecoesCasa()) || (await colecoesWeb());
-    if (l) { sv('colecoes_cache', l); return arvore(l); }
+    const casa = await colecoesCasa();
+    if (casa) { sv('colecoes_cache_casa', casa); return { origem: 'casa', itens: arvore(casa) }; }
+    const web = await colecoesWeb();
+    if (web) { sv('colecoes_cache_web', web); return { origem: 'web', itens: arvore(web) }; }
     const t = await alvosDesktop();
-    if (t) return t.filter((x) => /^C/.test(x.id)).map((x) => ({ key: '', name: x.name, nivel: Math.max(0, (x.level || 1) - 1) }));
-    return arvore(gv('colecoes_cache', []) || []);
+    if (t) return { origem: 'desktop', itens: t.filter((x) => /^C/.test(x.id)).map((x) => ({ key: '', name: x.name, nivel: Math.max(0, (x.level || 1) - 1) })) };
+    const cache = gv('colecoes_cache_casa', []) || [];
+    if (cache.length) return { origem: 'casa', itens: arvore(cache) };
+    return { origem: 'web', itens: arvore(gv('colecoes_cache_web', []) || []) };
   }
+  // Gravação enviada e sem resposta (erro de rede ou tempo esgotado): pode ter gravado. Status HTTP = resposta certa de falha.
+  const semResposta = (r) => !r.status && (r.erro === 'sem resposta' || r.erro === 'tempo esgotado');
+  const semColecao = (nome) => `coleção “${nome}” não encontrada; item salvo na biblioteca`;
   const chaveDe = (nome, lista) => { const c = (lista || []).find((x) => x.name === nome); return c ? c.key : ''; };
 
   // ---------------------------------------------------------------- destinos
-  async function viaCasa(c, it, nome, passo) {
+  async function viaCasa(c, it, col, passo) {
     const B = gv('bridge_url', BRIDGE);
+    const nome = col ? col.name : '';
     passo('casa', 'run');
     const h = await gm({ url: `${B}/health`, timeout: 4000 });
     if (!h.ok) return { falha: h.status ? `respondeu ${h.status}` : 'fora do ar' };
-    let colKey = nome ? chaveDe(nome, gv('colecoes_cache', [])) : '';
-    if (nome && !colKey) { const l = await colecoesCasa(); if (l) { sv('colecoes_cache', l); colKey = chaveDe(nome, l); } }
+    // Chave só vale se a lista escolhida veio do Zotero de casa; senão resolve pelo nome.
+    let colKey = col && col.origem === 'casa' && col.key ? col.key : '';
+    if (nome && !colKey) colKey = chaveDe(nome, gv('colecoes_cache_casa', []));
+    if (nome && !colKey) { const l = await colecoesCasa(); if (l) { sv('colecoes_cache_casa', l); colKey = chaveDe(nome, l); } }
     const corpo = {
       url: c.url, title: it.title || c.titulo, html_meta: c.m, doi: c.doi || undefined, isbn: c.isbn || undefined,
       selection: c.sel || undefined, pdf_url: c.pdf || undefined,
       collection: colKey || nome || undefined, collection_name: nome || undefined,
     };
     const r = await gm({ method: 'POST', url: `${B}/save`, headers: { 'Content-Type': 'application/json' }, data: JSON.stringify(corpo), timeout: 90000 });
+    // Pedido enviado e sem resposta: pode ter gravado. Parar aqui evita item duplicado em outro destino.
+    if (semResposta(r)) return { incerto: true };
     const j = r.ok && parse(r.text);
     if (!j || !j.key) return { falha: r.status ? `respondeu ${r.status}` : r.erro || 'sem resposta' };
-    return { key: j.key, abnt: sanitiza(j.abnt), abntFonte: 'zotero', faltando: Array.isArray(j.faltando) ? j.faltando.map((f) => clean(f && typeof f === 'object' ? f.rotulo || f.campo : f)).filter(Boolean) : [], duplicata: !!j.duplicata, fontes: j.fontes };
+    const abnt = sanitiza(j.abnt_html || j.abnt);
+    const dest = j.destino && typeof j.destino === 'object' ? j.destino : {};
+    const avisos = nome && !colKey && !dest.colecao && !j.duplicata ? [semColecao(nome)] : [];
+    return {
+      key: j.key, abnt: abnt || abntLocal(it), abntFonte: abnt ? 'zotero' : 'local', avisos,
+      faltando: Array.isArray(j.faltando) ? j.faltando.map((f) => clean(f && typeof f === 'object' ? f.rotulo || f.campo : f)).filter(Boolean) : [],
+      duplicata: !!j.duplicata, fontes: j.fontes,
+    };
   }
 
-  async function viaDesktop(c, it, nome, passo) {
+  async function viaDesktop(c, it, col, passo) {
+    const nome = col ? col.name : '';
     passo('desktop', 'run');
     const p = await gm({ method: 'POST', url: `${DESKTOP}/connector/ping`, headers: DESKTOP_H, data: '{}', timeout: 2500 });
     if (!p.ok) return { falha: p.status ? `respondeu ${p.status}` : 'fechado' };
     const sid = token();
-    const item = { ...it, id: 'zs1', attachments: [], notes: [] };
+    const falta = faltando(it);
+    const item = { ...it, id: 'zs1', tags: falta.length ? [{ tag: 'abnt-incompleto' }] : [], attachments: [], notes: [] };
     if (c.pdf) item.attachments.push({ url: c.pdf, title: 'PDF', mimeType: 'application/pdf' });
     if (c.sel) item.notes.push({ note: `<p>${esc(c.sel)}</p>` });
     const s = await gm({ method: 'POST', url: `${DESKTOP}/connector/saveItems`, headers: DESKTOP_H, data: JSON.stringify({ sessionID: sid, uri: c.url, items: [item] }), timeout: 60000 });
-    if (!s.ok) return { falha: `respondeu ${s.status || s.erro}` };
+    // Item enviado e sem resposta: pode ter gravado; a Web API não é tentada.
+    if (semResposta(s)) return { incerto: true };
+    if (!s.ok) return { falha: s.status ? `respondeu ${s.status}` : s.erro || 'sem resposta' };
+    const avisos = [];
     if (nome) {
       const t = await alvosDesktop();
       const alvo = t && t.find((x) => /^C/.test(x.id) && x.name === nome);
-      if (alvo) await gm({ method: 'POST', url: `${DESKTOP}/connector/updateSession`, headers: DESKTOP_H, data: JSON.stringify({ sessionID: sid, target: alvo.id }), timeout: 5000 });
+      const u = alvo && await gm({ method: 'POST', url: `${DESKTOP}/connector/updateSession`, headers: DESKTOP_H, data: JSON.stringify({ sessionID: sid, target: alvo.id }), timeout: 5000 });
+      if (!u || !u.ok) avisos.push(semColecao(nome));
     }
-    return { key: '', abnt: abntLocal(it), abntFonte: 'local', faltando: faltando(it), duplicata: false };
+    return { key: '', abnt: abntLocal(it), abntFonte: 'local', faltando: falta, duplicata: false, avisos };
   }
 
-  async function viaWeb(c, it, nome, passo) {
+  async function viaWeb(c, it, col, passo) {
+    const nome = col ? col.name : '';
     passo('web', 'run');
     if (!gv('zotero_key', '')) return { falha: 'sem chave (menu “Configurar chave”)' };
     const cr = await credenciais();
-    if (!cr) return { falha: 'chave recusada' };
+    if (!cr || cr.erro) return { falha: cr ? cr.erro : 'chave recusada' };
     const base = `${API}/users/${cr.uid}`;
     const bib = async (k) => {
       const r = await gm({ url: `${base}/items/${k}?format=bib&style=${ESTILO}&locale=pt-BR`, headers: cr.h, anonymous: true });
       return r.ok ? sanitiza(r.text) : '';
     };
-    // Duplicata: mesmo DOI, ISBN ou URL já na biblioteca.
-    const alvo = it.DOI || c.doiMeta || it.ISBN || it.url;
-    const norm = (s) => clean(s).toLowerCase().replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
-    if (alvo) {
+    // Duplicata: mesmo DOI (sem caixa, com ou sem doi.org), ISBN (qualquer um dos guardados, como ISBN-13) ou URL.
+    const norm = (s) => clean(s).toLowerCase().replace(/^https?:\/\/(dx\.)?doi\.org\//, '').replace(/^doi:\s*/, '')
+      .replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
+    const isbns = (s) => String(s || '').split(/[\s,;]+/).map(isbn13).filter(Boolean);
+    const doiA = norm(it.DOI || c.doiMeta), isbnA = isbn13(it.ISBN), urlA = norm(it.url);
+    // Uma busca por identificador (DOI, ISBN, URL), parando no primeiro item que casar.
+    const alvos = [...new Set([it.DOI || c.doiMeta, it.ISBN, it.url].map(clean).filter(Boolean))];
+    const avisos = [];
+    let conferiu = false;
+    for (const alvo of alvos) {
       const r = await gm({ url: `${base}/items/top?q=${encodeURIComponent(alvo)}&qmode=everything&limit=10&format=json`, headers: cr.h, anonymous: true });
       const l = r.ok && parse(r.text);
-      const igual = Array.isArray(l) && l.find((x) => { const d = x.data || {}; return [d.DOI, d.ISBN && isbnOk(d.ISBN), d.url, (/DOI:\s*(\S+)/.exec(d.extra || '') || [])[1]].filter(Boolean).some((v) => norm(v) === norm(alvo) || (isbnOk(v) && isbnOk(v) === isbnOk(alvo))); });
-      if (igual) return { key: igual.key, abnt: await bib(igual.key), abntFonte: 'zotero', faltando: faltando(igual.data), duplicata: true };
+      if (!Array.isArray(l)) continue;
+      conferiu = true;
+      const igual = l.find((x) => {
+        const d = (x && x.data) || {};
+        const dois = [d.DOI, (/DOI:\s*(\S+)/i.exec(d.extra || '') || [])[1]].filter(Boolean).map(norm);
+        return (doiA && dois.includes(doiA)) || (isbnA && isbns(d.ISBN).includes(isbnA)) || (urlA && d.url && norm(d.url) === urlA);
+      });
+      if (igual) {
+        const ab = await bib(igual.key);
+        return { key: igual.key, abnt: ab || abntLocal(igual.data || it), abntFonte: ab ? 'zotero' : 'local', faltando: faltando(igual.data || {}), duplicata: true };
+      }
     }
+    if (alvos.length && !conferiu) avisos.push('não deu para conferir duplicata no zotero.org; confira a biblioteca');
     const falta = faltando(it);
     let colKey = '';
-    if (nome) { const l = await colecoesWeb(); colKey = chaveDe(nome, l); }
+    if (nome) {
+      const l = await colecoesWeb();
+      if (l) sv('colecoes_cache_web', l);
+      // Chave escolhida na lista da Web API vale enquanto existir; senão resolve pelo nome.
+      const k = col.origem === 'web' && col.key ? col.key : '';
+      colKey = k && (!l || l.some((x) => x.key === k)) ? k : chaveDe(nome, l);
+      if (!colKey) avisos.push(semColecao(nome));
+    }
     const novo = { ...it, tags: falta.length ? [{ tag: 'abnt-incompleto' }] : [], collections: colKey ? [colKey] : [] };
     const h = { ...cr.h, 'Content-Type': 'application/json', 'Zotero-Write-Token': token() };
     const r = await gm({ method: 'POST', url: `${base}/items`, headers: h, data: JSON.stringify([novo]), anonymous: true, timeout: 30000 });
+    if (semResposta(r)) return { incerto: true };
     const j = r.ok && parse(r.text);
     const key = j && j.successful && j.successful['0'] && j.successful['0'].key;
-    if (!key) return { falha: `respondeu ${r.status || r.erro}` };
+    if (!key) return { falha: r.status ? `respondeu ${r.status}` : r.erro || 'sem resposta' };
     const filhos = [];
     if (c.pdf) filhos.push({ itemType: 'attachment', parentItem: key, linkMode: 'linked_url', title: 'PDF', url: c.pdf, contentType: 'application/pdf', tags: [] });
     if (c.sel) filhos.push({ itemType: 'note', parentItem: key, note: `<p>${esc(c.sel)}</p>`, tags: [] });
-    if (filhos.length) await gm({ method: 'POST', url: `${base}/items`, headers: { ...h, 'Zotero-Write-Token': token() }, data: JSON.stringify(filhos), anonymous: true, timeout: 30000 });
-    return { key, abnt: (await bib(key)) || abntLocal(it), abntFonte: 'zotero', faltando: falta, duplicata: false };
+    if (filhos.length) {
+      const f = await gm({ method: 'POST', url: `${base}/items`, headers: { ...h, 'Zotero-Write-Token': token() }, data: JSON.stringify(filhos), anonymous: true, timeout: 30000 });
+      const fj = f.ok && parse(f.text);
+      const gravou = !!(fj && fj.successful && Object.keys(fj.successful).length === filhos.length);
+      if (!gravou) {
+        const oq = [c.pdf && 'o anexo PDF', c.sel && 'a nota com a seleção'].filter(Boolean);
+        const g = oq.length > 1 ? 'gravados' : c.pdf ? 'gravado' : 'gravada';
+        // Sem resposta: os filhos podem ter sido gravados; com status de erro, certamente não.
+        avisos.push(semResposta(f) ? `item salvo; ${oq.join(' e ')} ${oq.length > 1 ? 'podem não ter sido' : 'pode não ter sido'} ${g}`
+          : `item salvo; ${oq.join(' e ')} não ${oq.length > 1 ? 'foram' : 'foi'} ${g}`);
+      }
+    }
+    const ab = await bib(key);
+    return { key, abnt: ab || abntLocal(it), abntFonte: ab ? 'zotero' : 'local', faltando: falta, duplicata: false, avisos };
   }
 
   const DESTINOS = [['casa', 'Zotero de casa', viaCasa], ['desktop', 'Zotero desktop', viaDesktop], ['web', 'Web API (zotero.org)', viaWeb]];
@@ -485,22 +595,28 @@
   async function salvar() {
     if (salvando) return;
     salvando = true;
-    const c = captura(true);
-    if (selecaoGuardada && !c.sel) c.sel = selecaoGuardada;
-    selecaoGuardada = '';
-    const { item } = montaItem(c);
-    const nome = ui.colecao();
-    ui.inicio(item, c);
-    const passo = (d, estado, txt) => ui.passo(d, estado, txt);
-    let res = null;
-    for (const [id, , fn] of DESTINOS) {
-      let r;
-      try { r = await fn(c, item, nome, passo); } catch (e) { r = { falha: 'erro inesperado' }; }
-      if (r && !r.falha) { passo(id, 'ok', r.duplicata ? 'já existia' : 'salvo'); res = { ...r, destino: id }; break; }
-      passo(id, 'fail', r ? r.falha : 'sem resposta');
+    try {
+      const c = captura(true);
+      if (selecaoGuardada && !c.sel) c.sel = selecaoGuardada;
+      selecaoGuardada = '';
+      const { item } = montaItem(c);
+      const col = ui.colecao();
+      ui.inicio(item, c);
+      const passo = (d, estado, t) => ui.passo(d, estado, t);
+      let res = null;
+      for (const [id, , fn] of DESTINOS) {
+        let r;
+        try { r = await fn(c, item, col, passo); } catch (e) { r = { falha: 'erro inesperado' }; }
+        if (r && r.incerto) { passo(id, 'warn', 'sem resposta a tempo'); res = { incerto: true, destino: id }; break; }
+        if (r && !r.falha) { passo(id, 'ok', r.duplicata ? 'já existia' : 'salvo'); res = { ...r, destino: id }; break; }
+        passo(id, 'fail', r ? r.falha : 'sem resposta');
+      }
+      ui.fim(res, item);
+    } catch (e) {
+      ui.erro();
+    } finally {
+      salvando = false;
     }
-    ui.fim(res, item);
-    salvando = false;
   }
 
   // ---------------------------------------------------------------- interface
@@ -543,7 +659,7 @@ button,select{font:inherit;color:inherit}
 .meta{color:var(--us-text-2);font-size:13px}
 .lin{display:flex;align-items:center;gap:10px;min-height:var(--us-target);border-top:1px solid var(--us-border);margin-top:10px;padding-top:4px}
 .lin label{flex:0 0 auto;color:var(--us-text-2)}
-.lin select{flex:1;min-width:0;height:36px;border:1px solid var(--us-border);border-radius:var(--us-radius-s);background:var(--us-surface-2);padding:0 8px}
+.lin select{flex:1;min-width:0;height:var(--us-target);border:1px solid var(--us-border);border-radius:var(--us-radius-s);background:var(--us-surface-2);padding:0 8px}
 .nota{font-size:12px;color:var(--us-text-2);margin-top:-2px}
 .salvar{width:100%;height:var(--us-target);margin-top:10px;border:0;border-radius:10px;background:var(--us-accent);color:#fff;font-weight:700;font-size:15px;cursor:pointer}
 .salvar[disabled]{opacity:.6;cursor:default}
@@ -552,11 +668,13 @@ button,select{font:inherit;color:inherit}
 .passos b{color:var(--us-text);font-weight:600}
 .st{width:10px;height:10px;border-radius:50%;background:var(--us-border);flex:0 0 auto}
 .st.run{background:var(--us-accent);animation:pulsa 1s infinite alternate}
-.st.ok{background:var(--us-pass)}.st.fail{background:var(--us-fail)}
+.st.ok{background:var(--us-pass)}.st.fail{background:var(--us-fail)}.st.warn{background:var(--us-unknown)}
 @keyframes pulsa{to{opacity:.35}}
 @media (prefers-reduced-motion: reduce){.st.run{animation:none}}
 .res{margin-top:10px;font-weight:700}
 .res.ok{color:var(--us-pass)}.res.fail{color:var(--us-fail)}
+.res.warn{margin-top:10px;padding:8px 10px;border-radius:10px;background:var(--us-warn-bg);color:var(--us-warn-text)}
+.aviso{margin-top:6px;padding:6px 10px;border-radius:10px;background:var(--us-warn-bg);color:var(--us-warn-text);font-size:13px;font-weight:600}
 .abnt{margin-top:6px;padding:10px 12px;border-radius:10px;background:var(--us-surface-2);border:1px solid var(--us-border);font-size:13px;line-height:1.5;word-break:break-word}
 .abnt small{display:block;margin-top:6px;color:var(--us-text-2);font-size:11px}
 .acoes{display:flex;gap:8px;margin-top:8px}
@@ -570,12 +688,14 @@ kbd{font-family:inherit;border:1px solid var(--us-border);border-bottom-width:2p
 `;
 
   const ui = (() => {
-    let raiz = null, sh = null, pill = null, painel = null, lista = [], colAtual = colecaoDoSite();
+    let raiz = null, sh = null, pill = null, painel = null, lista = [], listaOrigem = '', colAtual = colecaoDoSite();
+    // Salvamento em curso ou o último: sobrevive a fechar e reabrir o painel.
+    let atual = null;
     function monta() {
       if (raiz) return;
       raiz = document.createElement('zotero-salvar');
       raiz.style.cssText = 'all:initial;position:fixed;z-index:2147483646';
-      sh = raiz.attachShadow({ mode: 'open' });
+      sh = raiz.attachShadow({ mode: 'closed' });
       sh.innerHTML = `<style>${CSS}</style>`;
       document.documentElement.append(raiz);
       document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && painel && !painel.hidden) fecha(); }, true);
@@ -592,8 +712,15 @@ kbd{font-family:inherit;border:1px solid var(--us-border);border-bottom-width:2p
       pill.setAttribute('aria-label', rot);
       pill.innerHTML = `<span class="z" aria-hidden="true">Z</span><span class="dot${completo ? ' ok' : ''}"></span>`;
       pill.addEventListener('pointerdown', () => { selecaoGuardada = clean(String(window.getSelection() || '')).slice(0, 5000); });
-      pill.addEventListener('click', () => { if (painel && !painel.hidden) fecha(); else abre(captura(true)); });
+      pill.addEventListener('click', (e) => { if (!e.isTrusted) return; if (painel && !painel.hidden) fecha(); else abre(captura(true)); });
       sh.append(pill);
+    }
+    // Valor da opção: a chave quando a lista tem chave, senão o nome.
+    const valor = (x) => (x ? x.key || x.name : '');
+    function valorAtual() {
+      if (!colAtual) return '';
+      const x = (colAtual.key && colAtual.origem === listaOrigem && lista.find((o) => o.key === colAtual.key)) || lista.find((o) => o.name === colAtual.name);
+      return x ? valor(x) : valor(colAtual);
     }
     function base(item, c) {
       monta();
@@ -621,46 +748,89 @@ kbd{font-family:inherit;border:1px solid var(--us-border);border-bottom-width:2p
       painel.querySelector('.x').addEventListener('click', fecha);
       const sel = painel.querySelector('select');
       const preenche = () => {
-        sel.innerHTML = '<option value="">Biblioteca (sem coleção)</option>' + lista.map((x) => `<option value="${esc(x.name)}">${'  '.repeat(x.nivel || 0)}${esc(x.name)}</option>`).join('');
-        if (colAtual && !lista.some((x) => x.name === colAtual)) sel.insertAdjacentHTML('beforeend', `<option value="${esc(colAtual)}">${esc(colAtual)}</option>`);
-        sel.value = colAtual;
+        sel.innerHTML = '<option value="">Biblioteca (sem coleção)</option>' + lista.map((x) => `<option value="${esc(valor(x))}">${'  '.repeat(x.nivel || 0)}${esc(x.name)}</option>`).join('');
+        const v = valorAtual();
+        if (v && !lista.some((x) => valor(x) === v)) sel.insertAdjacentHTML('beforeend', `<option value="${esc(v)}">${esc(colAtual.name)}</option>`);
+        sel.value = v;
       };
       preenche();
-      sel.addEventListener('change', () => { colAtual = sel.value; guardaColecao(colAtual); });
-      if (!lista.length) listaColecoes().then((l) => { if (l && l.length) { lista = l; if (painel && !painel.hidden) preenche(); } });
+      sel.addEventListener('change', () => {
+        const x = lista.find((o) => valor(o) === sel.value);
+        if (x) colAtual = { key: x.key || '', name: x.name, origem: listaOrigem };
+        else if (!sel.value) colAtual = null;
+        guardaColecao(colAtual);
+      });
+      if (!lista.length) {
+        listaColecoes().then((l) => {
+          if (l && l.itens && l.itens.length) {
+            lista = l.itens; listaOrigem = l.origem;
+            const s = painel && !painel.hidden && painel.querySelector('select');
+            if (s === sel) preenche();
+          }
+        }).catch(() => { /* fica só a biblioteca */ });
+      }
       return painel.querySelector('.area');
     }
-    function abre(c) {
+    function previa(c) {
       const { item } = montaItem(c);
       const area = base(item, c);
       const f = faltando(item);
       area.innerHTML = `<div class="falta">${f.length ? `<span class="tipo" style="background:none;padding:0">pela página, falta:</span>${f.map((x) => `<span>${esc(x)}</span>`).join('')}` : '<span class="compl">✓ dados completos para a ABNT</span>'}</div>
 <button class="salvar" type="button">Salvar no Zotero</button>`;
-      area.querySelector('.salvar').addEventListener('click', salvar);
+      area.querySelector('.salvar').addEventListener('click', (e) => { if (e.isTrusted) salvar(); });
+    }
+    // Reabrir durante o salvamento mostra o progresso; depois dele, o resultado (ou o erro) desta mesma página.
+    function abre(c) {
+      if (atual && (atual.fase === 'salvando' || ((atual.fase === 'fim' || atual.fase === 'erro') && atual.url === location.href))) desenha();
+      else previa(c);
+    }
+    function desenha() {
+      const area = base(atual.item, atual.c);
+      if (atual.fase === 'erro') {
+        area.innerHTML = '<div class="saida" aria-live="polite"></div>';
+        pintaErro();
+        return;
+      }
+      area.innerHTML = `<ul class="passos">${DESTINOS.map(([id, nome]) => `<li data-d="${id}"><span class="st"></span><b>${nome}</b><span class="m"></span></li>`).join('')}</ul><div class="saida" aria-live="polite"></div>`;
+      for (const [d, [estado, t]] of Object.entries(atual.passos)) pintaPasso(d, estado, t);
+      if (atual.fase === 'fim') pintaFim();
     }
     function inicio(item, c) {
-      const area = base(item, c);
-      area.innerHTML = `<ul class="passos">${DESTINOS.map(([id, nome]) => `<li data-d="${id}"><span class="st"></span><b>${nome}</b><span class="m"></span></li>`).join('')}</ul><div class="saida" aria-live="polite"></div>`;
+      atual = { item, c, url: location.href, passos: {}, fase: 'salvando', res: null };
+      desenha();
     }
-    function passo(d, estado, txt) {
+    function pintaPasso(d, estado, t) {
       const li = painel && painel.querySelector(`li[data-d="${d}"]`);
-      if (!li) return;
-      li.querySelector('.st').className = `st ${estado}`;
-      li.querySelector('.m').textContent = txt ? `— ${txt}` : estado === 'run' ? '— tentando…' : '';
+      const st = li && li.querySelector('.st'), m = li && li.querySelector('.m');
+      if (!st || !m) return;
+      st.className = `st ${estado}`;
+      m.textContent = t ? `— ${t}` : estado === 'run' ? '— tentando…' : '';
     }
-    function fim(r, item) {
-      const out = painel.querySelector('.saida');
+    function passo(d, estado, t) {
+      if (atual) atual.passos[d] = [estado, t];
+      pintaPasso(d, estado, t);
+    }
+    const INCERTO = { casa: 'O Zotero de casa', desktop: 'O Zotero desktop', web: 'A Web API (zotero.org)' };
+    function pintaFim() {
+      const out = painel && painel.querySelector('.saida');
+      if (!out || !atual) return;
+      const r = atual.res, item = atual.item;
       if (!r) { out.innerHTML = '<div class="res fail">Não salvou em nenhum destino.</div><div class="nota">Confira o Zotero de casa, abra o Zotero desktop ou configure a chave da Web API no menu do gerenciador.</div>'; return; }
-      const nomes = { casa: 'no Zotero de casa', desktop: 'no Zotero desktop', web: 'pela Web API (zotero.org)' };
+      if (r.incerto) { out.innerHTML = `<div class="res warn">${esc(INCERTO[r.destino] || 'O Zotero')} não respondeu a tempo; confira a biblioteca antes de salvar de novo.</div>`; return; }
+      const salvo = { casa: 'no Zotero de casa', desktop: 'no Zotero desktop', web: 'pela Web API (zotero.org)' };
+      const existia = { casa: 'no Zotero de casa', desktop: 'no Zotero desktop', web: 'na biblioteca do zotero.org' };
       const usuario = gv('zotero_username', '');
-      const link = r.destino !== 'desktop' && r.key && usuario ? `https://www.zotero.org/${encodeURIComponent(usuario)}/items/${encodeURIComponent(r.key)}` : '';
+      const link = r.destino === 'web' && r.key && usuario ? `https://www.zotero.org/${encodeURIComponent(usuario)}/items/${encodeURIComponent(r.key)}` : '';
       const f = r.faltando || [];
-      out.innerHTML = `<div class="res ok">${r.duplicata ? `Já estava na biblioteca ${esc(nomes[r.destino].replace(/^no |^pela /, '— '))}: nada foi criado.` : `Salvo ${esc(nomes[r.destino])}.`}</div>
-<div class="abnt"><span class="ref">${r.abnt || abntLocal(item)}</span><small>ABNT ${r.abntFonte === 'local' ? 'montada aqui com os dados enviados ao desktop' : 'formatada pelo Zotero'}</small></div>
+      const local = r.abntFonte === 'local' || !r.abnt;
+      out.innerHTML = `<div class="res ok">${r.duplicata ? `Já existia ${esc(existia[r.destino])}: nada foi criado.` : `Salvo ${esc(salvo[r.destino])}.`}</div>
+${(r.avisos || []).map((a) => `<div class="aviso">${esc(a)}</div>`).join('')}
+<div class="abnt"><span class="ref">${r.abnt || abntLocal(item)}</span><small>ABNT ${local ? 'montada aqui com os dados da página' : 'formatada pelo Zotero'}</small></div>
 <div class="falta">${f.length ? `<span class="tipo" style="background:none;padding:0">falta:</span>${f.map((x) => `<span>${esc(x)}</span>`).join('')}` : '<span class="compl">✓ referência completa</span>'}</div>
 <div class="acoes"><button type="button" class="cp">Copiar ABNT</button>${link ? `<a href="${esc(link)}" target="_blank" rel="noopener">Abrir no Zotero</a>` : ''}</div>`;
       const cp = out.querySelector('.cp');
-      cp.addEventListener('click', async () => {
+      cp.addEventListener('click', async (e) => {
+        if (!e.isTrusted) return;
         const el = out.querySelector('.ref');
         try {
           if (window.ClipboardItem) await navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([el.innerHTML], { type: 'text/html' }), 'text/plain': new Blob([el.textContent], { type: 'text/plain' }) })]);
@@ -669,13 +839,27 @@ kbd{font-family:inherit;border:1px solid var(--us-border);border-bottom-width:2p
         } catch (e) { cp.textContent = 'Selecione e copie'; }
       });
     }
+    function fim(r, item) {
+      if (!atual) atual = { item, c: { titulo: clean(document.title) }, url: location.href, passos: {} };
+      atual.res = r; atual.item = item || atual.item; atual.fase = 'fim';
+      pintaFim();
+    }
+    function pintaErro() {
+      const out = painel && painel.querySelector('.saida');
+      if (out) out.innerHTML = '<div class="res fail">Erro inesperado: nada foi salvo. Tente de novo.</div>';
+    }
+    function erro() {
+      atual = { item: { itemType: 'document' }, c: { titulo: clean(document.title) }, url: location.href, passos: {}, fase: 'erro', res: null };
+      desenha();
+    }
     function fecha() { if (painel) painel.hidden = true; }
     const colecao = () => colAtual;
-    return { mostraPilula, abre, inicio, passo, fim, fecha, colecao };
+    return { mostraPilula, abre, inicio, passo, fim, erro, fecha, colecao };
   })();
 
   // ---------------------------------------------------------------- gatilhos
   document.addEventListener('keydown', (e) => {
+    if (!e.isTrusted) return; // só teclas reais: a página não dispara gravação
     if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyZ') { e.preventDefault(); e.stopPropagation(); salvar(); }
   }, true);
 
@@ -688,7 +872,9 @@ kbd{font-family:inherit;border:1px solid var(--us-border);border-bottom-width:2p
       sv('zotero_key', k); sv('zotero_user', ''); sv('zotero_username', '');
       if (!k) { window.alert('Chave apagada deste aparelho.'); return; }
       const cr = await credenciais();
-      window.alert(cr ? 'Chave aceita pelo zotero.org.' : 'O zotero.org recusou a chave (ou não respondeu). Ela ficou guardada; confira e configure de novo se preciso.');
+      if (cr && !cr.erro) window.alert('Chave aceita pelo zotero.org.');
+      else if (cr && cr.erro === 'chave recusada') window.alert('O zotero.org recusou a chave. Ela ficou guardada; confira e configure de novo.');
+      else window.alert(`Não deu para conferir a chave (${cr ? cr.erro : 'sem chave'}). Ela ficou guardada; o script tenta de novo ao salvar.`);
     });
     GM_registerMenuCommand('Mostrar/ocultar a pílula neste site', () => {
       const m = gv('sem_pilula', {}) || {};

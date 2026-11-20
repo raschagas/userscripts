@@ -358,7 +358,9 @@ celular deslogado não é tocado (pede clique).
 ## Zotero — salvar página (`zotero-salvar.user.js`)
 
 Substitui o Zotero Connector. Não faz nada até ser acionado: `Alt+Shift+Z` ou o item **Salvar no
-Zotero** do menu do gerenciador salvam direto em qualquer página; o **botão redondo "Z"** no canto
+Zotero** do menu do gerenciador salvam direto em qualquer página. O atalho e os botões só respondem a
+teclas e cliques reais: uma página não consegue disparar a gravação sozinha, e o script roda isolado
+dela (`@inject-into content`, `@sandbox DOM`, painel em shadow root fechado). O **botão redondo "Z"** no canto
 inferior direito aparece só em páginas com DOI, `citation_*`, ISBN ou PDF e abre antes uma prévia
 (tipo, título, autores, coleção e o que vai faltar para a ABNT). Ponto verde no botão: a página traz
 tudo o que a ABNT pede; cinza: vai faltar algo.
@@ -368,13 +370,20 @@ DOI na URL ou no texto, ISBN, texto selecionado e o link do PDF) e tenta, nesta 
 
 | Destino | Como | Referência ABNT |
 |---|---|---|
-| Zotero de casa | `POST /save` com a captura; ele completa os dados, evita duplicata e grava | a do Zotero, com a lista do que falta |
-| Zotero desktop | aberto no próprio PC: `/connector/ping` e `/connector/saveItems` com o mesmo item (o desktop baixa o PDF) | montada no script com os mesmos dados |
-| Web API (zotero.org) | chave privada do aparelho; procura duplicata por DOI, ISBN ou URL antes de criar; PDF como link | a do Zotero (estilo ABNT) |
+| Zotero de casa | `POST /save` com a captura; ele completa os dados, evita duplicata e grava. Se o `/save` ficar sem resposta (erro de rede ou tempo esgotado), o script para e pede para conferir a biblioteca (pode ter gravado), sem tentar os outros destinos; `/health` fora do ar ou resposta HTTP de erro passa ao desktop | a do Zotero, com a lista do que falta |
+| Zotero desktop | aberto no próprio PC: `/connector/ping` e `/connector/saveItems` com o mesmo item (o desktop baixa o PDF). Se o `saveItems` ficar sem resposta (erro de rede ou tempo esgotado), o script para e pede para conferir a biblioteca, sem tentar a Web API; desktop fechado passa à Web API | montada no script com os mesmos dados |
+| Web API (zotero.org) | chave privada do aparelho; antes de criar, uma busca por identificador (DOI, ISBN, URL), parando no primeiro que casar (ISBN-10 ou 13, qualquer um dos guardados no item). Se nenhuma busca responder, cria e avisa que não deu para conferir duplicata. Se a criação ficar sem resposta, pede para conferir a biblioteca; se o anexo ou a nota ficar sem resposta, avisa que pode não ter sido gravado. PDF como link | a do Zotero (estilo ABNT) |
 
 O painel diz em qual destino salvou, por que os anteriores falharam, mostra a referência com
-**Copiar ABNT** e os campos que nenhuma fonte trouxe (o item ganha a tag `abnt-incompleto`). Nada é
-inventado: campo sem fonte fica vazio. A coleção escolhida fica lembrada por site.
+**Copiar ABNT** e os campos que nenhuma fonte trouxe. No desktop e na Web API, o item incompleto ganha a
+tag `abnt-incompleto`; o Zotero de casa devolve a própria lista do que falta. Quando o Zotero não devolve
+a referência formatada, o painel avisa que ela foi montada aqui. Nada é inventado: campo sem fonte fica
+vazio. Só links `http`/`https` viram anexo PDF. A coleção escolhida fica lembrada por site (chave e nome);
+a chave só vale no destino de onde veio a lista, os outros procuram a coleção pelo nome. Se ela não
+existir no destino que salvou, o painel avisa e o item fica na biblioteca. Lista de coleções da Web API
+com alguma página falhando não é usada nem guardada. Fechar o painel durante o salvamento não o
+interrompe: reabrir pelo botão mostra o progresso e, depois, o resultado ou o erro. O link **Abrir no Zotero**
+aparece só para itens gravados pela Web API.
 
 Menu do gerenciador: **Configurar chave da Web API** (criada em zotero.org/settings/keys, com escrita;
 fica só no `GM_getValue` do aparelho, nunca no código) e **Mostrar/ocultar a pílula neste site**.
